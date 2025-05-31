@@ -2,3 +2,5 @@ requests
 pandas
 time
 datetime
+uuid
+pymysql

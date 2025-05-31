@@ -4,6 +4,7 @@ import pandas as pd
 import time
 from datetime import datetime, timedelta
 import uuid
+import pymysql
 
 # Constantes de configuración de la API REE
 BASE_URL = "https://apidatos.ree.es/es/datos/"
@@ -129,3 +130,58 @@ df_demanda = ree_data_df[ree_data_df["endpoint"] == "demanda"].drop(columns=["en
 df_balance = ree_data_df[ree_data_df["endpoint"] == "balance"].drop(columns=["endpoint"])
 df_generacion = ree_data_df[ree_data_df["endpoint"] == "generacion"].drop(columns=["endpoint", "sub_category"])
 df_intercambios = ree_data_df[ree_data_df["endpoint"] == "intercambios"].drop(columns=["endpoint"])
+
+
+#Script para poblar nuestra BBDD en MYSQL
+# Conexión a la base de datos
+database = "ree"
+
+# Diccionario tabla -> DataFrame
+tablas_dfs = {
+    "demanda": df_demanda,
+    "generacion": df_generacion,
+    "balance": df_balance,
+    "intercambios": df_intercambios
+}
+
+batch_size = 1000
+
+db = pymysql.connect(
+    host='localhost',
+    user='root',
+    password='password',
+    database=database
+)
+
+cursor = db.cursor()
+
+for tabla, df in tablas_dfs.items():
+    # Obtener nombres de columnas desde la tabla destino
+    cursor.execute(f"SELECT * FROM {tabla} LIMIT 0;")
+    column_names = [col[0] for col in cursor.description]
+
+    # Preparar la query de inserción
+    insert_query = (
+        f"INSERT INTO {tabla} ({', '.join(column_names)}) "
+        f"VALUES ({', '.join(['%s'] * len(column_names))})"
+    )
+
+    # Reemplazar NaN por None
+    df = df.where(pd.notnull(df), None)
+
+    # Ordenar columnas como en la tabla
+    values = [tuple(row) for row in df[column_names].values]
+
+    # Insertar en lotes
+    for i in range(0, len(values), batch_size):
+        batch = values[i: i + batch_size]
+        try:
+            cursor.executemany(insert_query, batch)
+            db.commit()
+            print(f"Añadidas: {cursor.rowcount} filas en '{tabla}' (Batch {i // batch_size + 1})")
+        except Exception as e:
+            print(f"Error al insertar en '{tabla}' (Batch {i // batch_size + 1}): {e}")
+            db.rollback()
+
+cursor.close()
+db.close()
