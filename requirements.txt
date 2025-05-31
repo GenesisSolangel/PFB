@@ -1,6 +1,6 @@
-requests
+streamlit
 pandas
-time
+requests
 datetime
-uuid
-pymysql
+time
+plotly.express
