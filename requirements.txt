@@ -1,6 +1,8 @@
 streamlit
 pandas
 requests
-datetime
-time
-plotly.express
+plotly
+pymysql
+folium
+matplotlib
+seaborn

@@ -4,7 +4,6 @@ import pandas as pd
 import time
 from datetime import datetime, timedelta
 import uuid
-import pymysql
 
 # Constantes de configuración de la API REE
 BASE_URL = "https://apidatos.ree.es/es/datos/"
@@ -17,8 +16,9 @@ HEADERS = {
 ENDPOINTS = {
     "demanda": ("demanda/evolucion", "hour"),
     "balance": ("balance/balance-electrico", "day"),
-    "generacion": ("generacion/potencia-instalada", "month"),
-    "intercambios": ("intercambios/todas-fronteras-programados", "day")
+    "generacion": ("generacion/evolucion-renovable-no-renovable", "day"),
+    "intercambios": ("intercambios/todas-fronteras-programados", "day"),
+    "intercambios_baleares": ("intercambios/enlace-baleares", "day"),
 }
 
 # Función para consultar un endpoint, según los parámetros dados, de la API de REE 
@@ -52,7 +52,7 @@ def get_data(endpoint_name, endpoint_info, params):
                     entry["sub_category"] = sub_cat
                     data.append(entry)
         else:
-            # Procesamos las estructuras más simples (demanda, generacion), asumiendo que no hay subcategorías
+            # Procesamos las estructuras más simples (demanda, generacion, intercambios_baleares), asumiendo que no hay subcategorías
             for entry in attrs.get("values", []):
                 entry["primary_category"] = category
                 entry["sub_category"] = None
@@ -130,8 +130,10 @@ df_demanda = ree_data_df[ree_data_df["endpoint"] == "demanda"].drop(columns=["en
 df_balance = ree_data_df[ree_data_df["endpoint"] == "balance"].drop(columns=["endpoint"])
 df_generacion = ree_data_df[ree_data_df["endpoint"] == "generacion"].drop(columns=["endpoint", "sub_category"])
 df_intercambios = ree_data_df[ree_data_df["endpoint"] == "intercambios"].drop(columns=["endpoint"])
+df_intercambios_baleares = ree_data_df[ree_data_df["endpoint"] == "intercambios_baleares"].drop(columns=["endpoint", "sub_category"])
 
 
+##############################################################################################################################################
 #Script para poblar nuestra BBDD en MYSQL
 # Conexión a la base de datos
 database = "ree"
@@ -141,7 +143,8 @@ tablas_dfs = {
     "demanda": df_demanda,
     "generacion": df_generacion,
     "balance": df_balance,
-    "intercambios": df_intercambios
+    "intercambios": df_intercambios,
+    "intercambios_baleares": df_intercambios_baleares
 }
 
 batch_size = 1000

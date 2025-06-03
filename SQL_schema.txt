@@ -1,0 +1,71 @@
+# Esquema de la Base de datos en SQL
+
+DROP DATABASE IF EXISTS ree;
+CREATE DATABASE IF NOT EXISTS ree;
+USE ree;
+CREATE TABLE IF NOT EXISTS demanda(
+	record_id CHAR(36) PRIMARY KEY,
+    value FLOAT,
+    percentage FLOAT,
+    datetime DATETIME,
+    primary_category VARCHAR(255),
+    year INT,
+    month INT,
+    day INT,
+    hour INT,
+    extraction_timestamp DATETIME);
+DESCRIBE demanda; 
+
+CREATE TABLE IF NOT EXISTS balance(
+	record_id CHAR(36) PRIMARY KEY,
+    value FLOAT,
+    percentage FLOAT,
+    datetime DATETIME,
+    primary_category VARCHAR(255),
+    sub_category VARCHAR(255),
+    year INT,
+    month INT,
+    day INT,
+    hour INT,
+    extraction_timestamp DATETIME);
+DESCRIBE balance; 
+
+CREATE TABLE IF NOT EXISTS generacion(
+	record_id CHAR(36) PRIMARY KEY,
+    value FLOAT,
+    percentage FLOAT,
+    datetime DATETIME,
+    primary_category VARCHAR(255),
+    year INT,
+    month INT,
+    day INT,
+    hour INT,
+    extraction_timestamp DATETIME);
+DESCRIBE generacion; 
+
+CREATE TABLE IF NOT EXISTS intercambios(
+	record_id CHAR(36) PRIMARY KEY,
+    value FLOAT,
+    percentage FLOAT,
+    datetime DATETIME,
+    primary_category VARCHAR(255),
+    sub_category VARCHAR(255),
+    year INT,
+    month INT,
+    day INT,
+    hour INT,
+    extraction_timestamp DATETIME);
+DESCRIBE intercambios; 
+
+CREATE TABLE IF NOT EXISTS intercambios_baleares(
+	record_id CHAR(36) PRIMARY KEY,
+    value FLOAT,
+    percentage FLOAT,
+    datetime DATETIME,
+    primary_category VARCHAR(255),
+    year INT,
+    month INT,
+    day INT,
+    hour INT,
+    extraction_timestamp DATETIME);
+DESCRIBE intercambios_baleares; 
