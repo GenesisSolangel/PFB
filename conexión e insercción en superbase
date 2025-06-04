@@ -1,0 +1,46 @@
+# ---------------- SUPABASE: Conexión e Inserción ---------------- #
+from supabase import create_client, Client
+
+# 🔐 Configura tus credenciales de Supabase
+url = "https://tu-proyecto.supabase.co"  # Sustituye con tu URL
+key = "tu-anon-key"                      # Sustituye con tu anon key
+supabase: Client = create_client(url, key)
+
+# 📁 Diccionario tabla → DataFrame
+tablas_dfs = {
+    "demanda": df_demanda,
+    "balance": df_balance,
+    "generacion": df_generacion,
+    "intercambios": df_intercambios,
+    "intercambios_baleares": df_intercambios_baleares
+}
+
+#para insertar cada DataFrame
+def insertar_en_supabase(nombre_tabla, df):
+    import uuid
+
+    df = df.copy()
+
+    #Asegurar UUID únicos
+    df["record_id"] = [str(uuid.uuid4()) for _ in range(len(df))]
+
+    # Convertir fechas a string ISO
+    for col in ["datetime", "extraction_timestamp"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+
+    #Reemplazar NaN por None
+    df = df.where(pd.notnull(df), None)
+
+    #Convertir a lista de diccionarios e insertar
+    data = df.to_dict(orient="records")
+
+    try:
+        response = supabase.table(nombre_tabla).insert(data).execute()
+        print(f"✅ Insertados en '{nombre_tabla}': {len(data)} filas")
+    except Exception as e:
+        print(f"❌ Error al insertar en '{nombre_tabla}': {e}")
+
+# inserciones por tabla
+for tabla, df in tablas_dfs.items():
+    insertar_en_supabase(tabla, df)

@@ -1,0 +1,71 @@
+-- Tabla: demanda
+CREATE TABLE IF NOT EXISTS demanda (
+    record_id UUID PRIMARY KEY,
+    value DOUBLE PRECISION,
+    percentage DOUBLE PRECISION,
+    datetime TIMESTAMP WITH TIME ZONE,
+    primary_category VARCHAR(255),
+    year INT,
+    month INT,
+    day INT,
+    hour INT,
+    extraction_timestamp TIMESTAMP WITH TIME ZONE
+);
+
+-- Tabla: balance
+CREATE TABLE IF NOT EXISTS balance (
+    record_id UUID PRIMARY KEY,
+    value DOUBLE PRECISION,
+    percentage DOUBLE PRECISION,
+    datetime TIMESTAMP WITH TIME ZONE,
+    primary_category VARCHAR(255),
+    sub_category VARCHAR(255),
+    year INT,
+    month INT,
+    day INT,
+    hour INT,
+    extraction_timestamp TIMESTAMP WITH TIME ZONE
+);
+
+-- Tabla: generacion
+CREATE TABLE IF NOT EXISTS generacion (
+    record_id UUID PRIMARY KEY,
+    value DOUBLE PRECISION,
+    percentage DOUBLE PRECISION,
+    datetime TIMESTAMP WITH TIME ZONE,
+    primary_category VARCHAR(255),
+    year INT,
+    month INT,
+    day INT,
+    hour INT,
+    extraction_timestamp TIMESTAMP WITH TIME ZONE
+);
+
+-- Tabla: intercambios
+CREATE TABLE IF NOT EXISTS intercambios (
+    record_id UUID PRIMARY KEY,
+    value DOUBLE PRECISION,
+    percentage DOUBLE PRECISION,
+    datetime TIMESTAMP WITH TIME ZONE,
+    primary_category VARCHAR(255),
+    sub_category VARCHAR(255),
+    year INT,
+    month INT,
+    day INT,
+    hour INT,
+    extraction_timestamp TIMESTAMP WITH TIME ZONE
+);
+
+-- Tabla: intercambios_baleares
+CREATE TABLE IF NOT EXISTS intercambios_baleares (
+    record_id UUID PRIMARY KEY,
+    value DOUBLE PRECISION,
+    percentage DOUBLE PRECISION,
+    datetime TIMESTAMP WITH TIME ZONE,
+    primary_category VARCHAR(255),
+    year INT,
+    month INT,
+    day INT,
+    hour INT,
+    extraction_timestamp TIMESTAMP WITH TIME ZONE
+);
