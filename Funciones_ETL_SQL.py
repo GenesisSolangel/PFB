@@ -116,6 +116,7 @@ def get_data_for_last_x_years(num_years=3):
                     all_dfs.append(df)
 
                 time.sleep(1)
+                print("iter")
 
     if all_dfs:
         combined_df = pd.concat(all_dfs, ignore_index=True)
@@ -133,58 +134,51 @@ df_intercambios = ree_data_df[ree_data_df["endpoint"] == "intercambios"].drop(co
 df_intercambios_baleares = ree_data_df[ree_data_df["endpoint"] == "intercambios_baleares"].drop(columns=["endpoint", "sub_category"])
 
 
-##############################################################################################################################################
-#Script para poblar nuestra BBDD en MYSQL
-# Conexión a la base de datos
-database = "ree"
+############################################
 
-# Diccionario tabla -> DataFrame
+# ---------------- SUPABASE: Conexión e Inserción ---------------- #
+from supabase import create_client, Client
+
+# 🔐 Configura tus credenciales de Supabase
+url = "https://iuphsrhiqotzclypaqnt.supabase.co"  # Sustituye con tu URL
+key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1cGhzcmhpcW90emNseXBhcW50Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkwMzUwMTUsImV4cCI6MjA2NDYxMTAxNX0.K1tJ9T4jVUfQtlHoZbMMriKtRVlzLW8AG5aE2r6c6-w"                      # Sustituye con tu anon key
+supabase: Client = create_client(url, key)
+
+# 📁 Diccionario tabla → DataFrame
 tablas_dfs = {
     "demanda": df_demanda,
-    "generacion": df_generacion,
     "balance": df_balance,
+    "generacion": df_generacion,
     "intercambios": df_intercambios,
     "intercambios_baleares": df_intercambios_baleares
 }
 
-batch_size = 1000
+#para insertar cada DataFrame
+def insertar_en_supabase(nombre_tabla, df):
+    import uuid
 
-db = pymysql.connect(
-    host='localhost',
-    user='root',
-    password='password',
-    database=database
-)
+    df = df.copy()
 
-cursor = db.cursor()
+    #Asegurar UUID únicos
+    df["record_id"] = [str(uuid.uuid4()) for _ in range(len(df))]
 
-for tabla, df in tablas_dfs.items():
-    # Obtener nombres de columnas desde la tabla destino
-    cursor.execute(f"SELECT * FROM {tabla} LIMIT 0;")
-    column_names = [col[0] for col in cursor.description]
+    # Convertir fechas a string ISO
+    for col in ["datetime", "extraction_timestamp"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
 
-    # Preparar la query de inserción
-    insert_query = (
-        f"INSERT INTO {tabla} ({', '.join(column_names)}) "
-        f"VALUES ({', '.join(['%s'] * len(column_names))})"
-    )
-
-    # Reemplazar NaN por None
+    #Reemplazar NaN por None
     df = df.where(pd.notnull(df), None)
 
-    # Ordenar columnas como en la tabla
-    values = [tuple(row) for row in df[column_names].values]
+    #Convertir a lista de diccionarios e insertar
+    data = df.to_dict(orient="records")
 
-    # Insertar en lotes
-    for i in range(0, len(values), batch_size):
-        batch = values[i: i + batch_size]
-        try:
-            cursor.executemany(insert_query, batch)
-            db.commit()
-            print(f"Añadidas: {cursor.rowcount} filas en '{tabla}' (Batch {i // batch_size + 1})")
-        except Exception as e:
-            print(f"Error al insertar en '{tabla}' (Batch {i // batch_size + 1}): {e}")
-            db.rollback()
+    try:
+        response = supabase.table(nombre_tabla).insert(data).execute()
+        print(f"✅ Insertados en '{nombre_tabla}': {len(data)} filas")
+    except Exception as e:
+        print(f"❌ Error al insertar en '{nombre_tabla}': {e}")
 
-cursor.close()
-db.close()
+# inserciones por tabla
+for tabla, df in tablas_dfs.items():
+    insertar_en_supabase(tabla, df)
