@@ -331,10 +331,15 @@ def main():
 
     with tab1:  # Reordeno esto para que la tab2 se cargue primero y defina el estado
         st.subheader("¿Qué es esta app?")
-        st.markdown("""
-        Esta aplicación se conecta con Supabase para consultar y visualizar datos de la Red Eléctrica Española
-        como demanda, generación, intercambios y balance eléctrico.
-        """)
+        st.markdown("""Este proyecto explora los datos públicos de la **Red Eléctrica de España (REE)** a través de su API.
+Se analizan aspectos como:
+
+- La **demanda eléctrica** por hora.
+- El **balance eléctrico** por día.
+- La **generación** por mes.
+- Los **intercambios programados** con otros países.
+
+Estos datos permiten visualizar la evolución energética de España y generar análisis útiles para planificación y sostenibilidad.""")
 
     with tab3:
         st.subheader("Visualización")
