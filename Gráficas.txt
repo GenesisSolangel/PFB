@@ -1,0 +1,76 @@
+##Grafico Historico Demanda##
+Este gráfico recoge toda la información disponible sobre la demanda desde el inicio del dataset. Muestra tendencias de largo plazo, incluyendo variaciones interanuales, estacionales y eventos atípicos.
+El gráfico histórico permite ubicar el apagón dentro de todo el periodo analizado y comprobar si fue un evento único en magnitud. 
+También ayuda a detectar si hay una tendencia creciente, decreciente o estancada en el consumo eléctrico nacional.
+--Descripción:--
+Este gráfico muestra la evolución de la demanda eléctrica en España,destacando el comportamiento del día del apagón.
+--Conclusión:--
+Se observa una caída abrupta de la demanda el 28 de abril, claramente fuera del patrón típico. La recuperación se da en las horas posteriores, lo que sugiere un evento puntual y disruptivo, posiblemente por fallo técnico o desconexión masiva.
+
+
+##Grafica Histórico Demanda Métricas (Comparación entre dos años)##
+Este gráfico interactivo permite comparar, día a día a lo largo del año, la evolución de la demanda eléctrica entre los años 2023 y 2024. A través de un menú desplegable, el usuario puede alternar entre cuatro métricas clave:
+Media
+Mediana
+Máximo
+Mínimo
+Cada métrica se representa con dos líneas: una para 2024 (en azul claro) y otra para 2023 (en azul oscuro. El eje X corresponde al día del año (1 a 366), y el eje Y muestra el valor de la demanda eléctrica en megavatios (MW).
+Esta visualización facilita una comparación directa y dinámica entre ambos años, ayudando a identificar diferencias estacionales, eventos anómalos o patrones generales de comportamiento.
+
+Conclusión:
+ La curva de media diaria revela el comportamiento general del consumo a lo largo del año. Se observan patrones estacionales similares en ambos años (mayor consumo en invierno y menor en primavera/otoño), aunque 2024 muestra un descenso más marcado en abril, probablemente relacionado con el apagón.
+Conclusión:
+ La mediana es menos sensible a valores extremos y confirma que, en términos centrales, 2024 sigue un patrón similar al de 2023, con pequeñas caídas en puntos concretos. La diferencia entre media y mediana en algunas zonas puede indicar la presencia de valores atípicos.
+Conclusión:
+ El gráfico de maximos muestra los picos diarios de consumo. 2024 presenta algunos máximos más bajos, particularmente en el segundo trimestre del año, lo que puede asociarse con menor actividad o eventos anómalos como cortes de red o apagones.
+Conclusión:
+ El mínimo diario de 2024 es visiblemente más bajo en abril que en 2023. Esto sugiere una caída puntual importante que no ocurrió el año anterior, reforzando la evidencia visual del impacto del apagón en la demanda mínima registrada ese día.
+Esta serie de gráficos proporciona una comparación robusta y clara del comportamiento eléctrico entre dos años completos. Permite detectar tendencias anuales, estacionalidad y eventos anómalos, y refuerza visualmente el efecto del apagón de 2024 en el contexto histórico reciente.
+
+##Identificación de Años Outliers (Demanda Anual Total)##
+Este mapa muestra los Outliers, pero si nos fijamos solo nos da como tal el año 2025 debido a que no está acabado. 
+El resto de años no supone ningún outliers ya que la demanda es constante en los años 2022, 2023, 2024 que están todos muy certa de una demanda de 700MW
+
+
+##Distribución de Demanda y Valores Atípicos para el año 2025##
+Descripción:
+Este histograma representa la distribución de la demanda eléctrica en España durante el año 2025.
+Se diferencian claramente los valores normales (en azul claro) de los valores atípicos u outliers (en rojo), determinados mediante el método estadístico del Z-Score con un umbral de ±3.
+Además, se añaden líneas verticales que marcan la media de los datos normales y los límites de los valores atípicos.
+Conclusión:
+El gráfico evidencia que la mayoría de los valores de demanda en 2025 se distribuyen de forma relativamente normal, pero existen valores extremos claramente fuera del patrón esperado, ubicados a ambos extremos del histograma.
+Estos outliers coinciden con eventos excepcionales, como el apagón del 28 de abril. Esto confirma que dicho evento no fue solo perceptible visualmente en series temporales, sino también estadísticamente anómalo dentro del comportamiento anual de la demanda.
+
+##Balance eléctrico 2025##
+
+Durante el primer semestre de 2025, la generación renovable domina el mix energético, aunque presenta alta variabilidad. La demanda se mantiene constante y baja en comparación, y el almacenamiento tiene un rol limitado. 
+Esto resalta la necesidad de optimizar el equilibrio entre generación, almacenamiento y consumo.
+
+
+##Generación diaria agregada por tipo 2025##
+En la primera mitad de 2025, la generación renovable se mantiene constantemente por encima de la no renovable, aunque muestra mayor variabilidad diaria. 
+La generación no renovable presenta una tendencia general a la baja hasta mayo, lo que podría reflejar una transición hacia fuentes más limpias o menor dependencia de combustibles fósiles.
+
+##Geojson Intercambios##
+Este mapa muestra el saldo neto de energía eléctrica intercambiada entre España y sus países vecinos durante el período analizado. Los datos están agregados por país y representados sobre un mapa interactivo.
+La intensidad del color refleja el volumen de intercambio: los colores azules indican exportación neta desde España, y los rojos indican importación neta hacia España.
+Los países considerados son: Francia, Portugal, Marruecos y Andorra, los cuales aparecen correctamente localizados mediante nombres estandarizados en inglés para coincidir con el archivo GeoJSON (world_countries_with_andorra.json).
+Conclusión:
+El mapa revela cómo se comportaron los flujos internacionales de energía en torno al apagón del 28 de abril de 2025.
+Si observamos una disminución en los intercambios con Francia o Marruecos, esto podría indicar una disrupción en el suministro internacional o un corte de emergencia.
+Si España aparece como exportadora neta incluso durante el apagón, esto sugeriría que el problema no fue de generación, sino interno (fallo de red o desconexión de carga).
+La inclusión de Andorra y Marruecos proporciona un contexto más completo del comportamiento eléctrico en la península y el norte de África.
+Este gráfico es crucial para analizar si los intercambios internacionales se comportaron de forma inusual, lo cual puede dar pistas sobre causas externas o coordinación regional ante el evento.
+
+##  Intercambios con las baleares 2025## (extra)
+Durante el primer semestre de 2025, las salidas de energía hacia Baleares superan consistentemente a las entradas, lo que indica que el sistema actúa mayormente como exportador neto de energía. 
+Ambos flujos muestran una tendencia creciente hacia junio, especialmente las salidas, lo que podría reflejar un aumento en la demanda en Baleares o una mayor capacidad exportadora del sistema.
+
+##Extras 2025 Demanda Pormedio por dia y hora##
+La demanda eléctrica promedio es más alta entre semana, especialmente de lunes a viernes, con picos concentrados entre las 7:00 y 21:00 horas. El máximo se registra los viernes alrededor de las 19:00 h, superando los 32 000 MW. 
+En contraste, los fines de semana muestran una demanda notablemente más baja y estable.
+
+##Distribución Demanda por mes 2025##
+La demanda eléctrica presenta mayor variabilidad y valores más altos en los primeros tres meses del año, destacando enero. 
+En abril, se observa una mayor cantidad de valores atípicos a la baja, lo que sugiere eventos inusuales de baja demanda. El evento inusual fué el apagón del 28/04/2025 donde España estuvo unas 8/10h horas sin luz en todo el país 
+A partir de mayo, la demanda se estabiliza, con una ligera reducción en la mediana mensual.
