@@ -244,7 +244,7 @@ def iniciar_programador_api():
         schedule.run_pending()
         tiempo.sleep(60)
 
-threading.Thread(target=iniciar_programador_api, daemon=True).start()
+#threading.Thread(target=iniciar_programador_api, daemon=True).start()
 
 # ------------------------------ CONSULTA SUPABASE ------------------------------
 
