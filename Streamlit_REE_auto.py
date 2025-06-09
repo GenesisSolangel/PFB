@@ -283,7 +283,7 @@ def get_data_from_supabase(table_name, start_date, end_date, page_size=1000):
 def main():
     st.title("Análisis de la Red Eléctrica Española")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Descripción", "Consulta de datos", "Visualización", "Extras"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Descripción", "Consulta de datos", "Visualización", "Apagón"])
 
     with tab2:  # Mueve el contexto de la tab2 aquí para que `modo` se defina antes de usarse en session_state
         st.subheader("Consulta de datos")
@@ -300,29 +300,33 @@ def main():
             dias = st.selectbox("¿Cuántos días atrás?", [7, 14, 30], key="query_days_select")
             end_date_query = datetime.now(timezone.utc)
             start_date_query = end_date_query - timedelta(days=dias)
-            st.session_state["selected_year_for_viz"] = None  # Reset year if not in "Año específico" mode
         elif modo == "Año específico":
             current_year = datetime.now().year
             # Se usa `key` para que el selectbox mantenga su estado
             año = st.selectbox("Selecciona el año:", [current_year - i for i in range(3)], index=0,
                                key="query_year_select")
-            st.session_state["selected_year_for_viz"] = año  # Store the selected year
             start_date_query = datetime(año, 1, 1, tzinfo=timezone.utc)
             end_date_query = datetime(año, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
         elif modo == "Histórico":
             # Si quieres cargar datos históricos de muchos años, ten cuidado con el rendimiento
             start_date_query = datetime(2022, 1, 1, 0, 0, 0, tzinfo=timezone.utc)  # Ejemplo de fecha inicial
             end_date_query = datetime.now(timezone.utc)
-            st.session_state["selected_year_for_viz"] = None  # Reset year if not in "Año específico" mode
 
         with st.spinner("Consultando Supabase..."):
             st.session_state["tabla_seleccionada_en_tab2"] = tabla
             df = get_data_from_supabase(tabla, start_date_query, end_date_query)
 
+        # Botón de actualización de datos desde la API
+        if st.button("Actualizar datos desde la API"):
+            with st.spinner("Actualizando datos desde la API (puede tardar)..."):
+                get_data_for_last_x_years()
+                st.success("Datos actualizados correctamente.")
+
         # Mostrar resultados después de la consulta de cualquier modo
         if not df.empty:
             st.session_state["ree_data"] = df
-            st.session_state["tabla"] = tabla  # Esto es redundante si usas tabla_seleccionada_en_tab2, pero lo mantengo por seguridad
+            st.session_state[
+                "tabla"] = tabla  # Esto es redundante si usas tabla_seleccionada_en_tab2, pero lo mantengo por seguridad
             st.write(f"Datos recuperados: {len(df)} filas")
             st.write("Último dato:", df['datetime'].max())
             st.success("Datos cargados correctamente desde Supabase.")
@@ -332,15 +336,8 @@ def main():
     with tab1:  # Reordeno esto para que la tab2 se cargue primero y defina el estado
         st.subheader("¿Qué es esta app?")
         st.markdown("""
-        Este proyecto explora los datos públicos de la **Red Eléctrica de España (REE)** a través de su API.
-        Se analizan aspectos como:
-
-        - La **demanda eléctrica** por hora.
-        - El **balance eléctrico** por día.
-        - La **generación** por mes.
-        - Los **intercambios programados** con otros países.
-
-        Estos datos permiten visualizar la evolución energética de España y generar análisis útiles para planificación y sostenibilidad.
+        Esta aplicación se conecta con Supabase para consultar y visualizar datos de la Red Eléctrica Española
+        como demanda, generación, intercambios y balance eléctrico.
         """)
 
     with tab3:
@@ -355,273 +352,173 @@ def main():
                 fig = px.area(df, x="datetime", y="value", title="Demanda Eléctrica", labels={"value": "MW"})
                 st.plotly_chart(fig, use_container_width=True)
 
-                # --- Nuevo gráfico: Histograma de demanda con outliers para año específico ---
-                if modo_actual == "Año específico":
-                    año_seleccionado = st.session_state.get("selected_year_for_viz")
-                    if año_seleccionado is None:
-                        st.warning(
-                            "Por favor, selecciona un año en la pestaña 'Consulta de datos' para ver el histograma de demanda.")
-                    else:
-                        st.subheader(f"Distribución de Demanda y Valores Atípicos para el año {año_seleccionado}")
-
-                        # Filtra el DataFrame para el año seleccionado (df ya debe estar filtrado por el año, pero esto es por seguridad)
-                        df_año = df[df['year'] == año_seleccionado].copy()
-
-                        if not df_año.empty:
-                            # Calcular Q1, Q3 y el IQR para la columna 'value' (demanda)
-                            Q1 = df_año['value'].quantile(0.25)
-                            Q3 = df_año['value'].quantile(0.75)
-                            IQR = Q3 - Q1
-
-                            # Calcular los límites de Tukey's Fence
-                            lower_bound = Q1 - 1.5 * IQR
-                            upper_bound = Q3 + 1.5 * IQR
-
-                            # Identificar valores atípicos
-                            df_año['is_outlier'] = 'Normal'
-                            df_año.loc[df_año['value'] < lower_bound, 'is_outlier'] = 'Atípico (bajo)'
-                            df_año.loc[df_año['value'] > upper_bound, 'is_outlier'] = 'Atípico (alto)'
-
-                            # Crear el histograma
-                            fig_hist_outliers = px.histogram(
-                                df_año,
-                                x="value",
-                                color="is_outlier",
-                                title=f"Distribución Horaria de Demanda para {año_seleccionado}",
-                                labels={"value": "Demanda (MW)", "is_outlier": "Tipo de Valor"},
-                                category_orders={"is_outlier": ["Atípico (bajo)", "Normal", "Atípico (alto)"]},
-                                color_discrete_map={'Normal': 'skyblue', 'Atípico (bajo)': 'orange',
-                                                    'Atípico (alto)': 'red'},
-                                nbins=50  # Ajusta el número de bins según la granularidad deseada
-                            )
-                            fig_hist_outliers.update_layout(bargap=0.1)  # Espacio entre barras
-                            st.plotly_chart(fig_hist_outliers, use_container_width=True)
-
-                            # Mostrar información sobre outliers
-                            num_outliers_low = (df_año['is_outlier'] == 'Atípico (bajo)').sum()
-                            num_outliers_high = (df_año['is_outlier'] == 'Atípico (alto)').sum()
-
-                            if num_outliers_low > 0 or num_outliers_high > 0:
-                                st.warning(
-                                    f"Se han identificado {num_outliers_low} valores atípicos por debajo y {num_outliers_high} por encima (método IQR).")
-                                st.info(f"Rango normal de demanda (IQR): {lower_bound:.2f} MW - {upper_bound:.2f} MW")
-                            else:
-                                st.info(
-                                    "No se han identificado valores atípicos de demanda significativos (método IQR).")
-                        else:
-                            st.warning(
-                                f"No hay datos de demanda para el año {año_seleccionado} para generar el histograma.")
-
-                # --- Condición para mostrar la comparativa de años (mantenida de antes) ---
+                # --- Condición para mostrar la comparativa de años ---
                 if modo_actual == "Histórico":
                     st.subheader("Comparativa de Demanda entre años")
 
-                    # Definir los dos años específicos para la comparación: el año pasado y el anterior
-                    current_year = datetime.now().year
+                    # --- Condición para mostrar la comparativa de años ---
+                    if modo_actual == "Histórico":
+                        st.subheader("Comparativa de Demanda entre años")
 
-                    # Los años que queremos comparar: el año anterior al actual y el año anterior a ese
-                    target_years_for_comparison = [current_year - 2, current_year - 1]
+                        # Definir los dos años específicos para la comparación: el año pasado y el anterior
+                        current_year = datetime.now().year
 
-                    # Obtener todos los años disponibles en el DataFrame del modo histórico
-                    all_available_years_in_df = sorted(list(df['year'].unique()))
+                        # Los años que queremos comparar: el año anterior al actual y el año anterior a ese
+                        target_years_for_comparison = [current_year - 2, current_year - 1]
 
-                    # Filtrar solo los años que queremos comparar y que realmente están disponibles en el df
-                    years_for_comparison = [
-                        year for year in target_years_for_comparison
-                        if year in all_available_years_in_df
-                    ]
+                        # Obtener todos los años disponibles en el DataFrame del modo histórico
+                        all_available_years_in_df = sorted(list(df['year'].unique()))
 
-                    if len(years_for_comparison) == 2:
-                        # Asegurarse de que están en el orden deseado (ej. [2023, 2024])
-                        years_for_comparison.sort()
-                    elif len(years_for_comparison) == 1:
-                        st.info(
-                            f"Solo se encontró un año de los deseados ({years_for_comparison[0]}) en modo histórico para la comparación. Se necesitan ambos años ({target_years_for_comparison[0]} y {target_years_for_comparison[1]}).")
-                        years_for_comparison = []  # Vaciar para no intentar graficar
-                    else:  # len(years_for_comparison) == 0
-                        st.info(
-                            f"No se encontraron datos para los años {target_years_for_comparison[0]} y {target_years_for_comparison[1]} en modo histórico para la comparación.")
-                        years_for_comparison = []  # Vaciar para no intentar graficar
+                        # Filtrar solo los años que queremos comparar y que realmente están disponibles en el df
+                        years_for_comparison = [
+                            year for year in target_years_for_comparison
+                            if year in all_available_years_in_df
+                        ]
 
-                    if years_for_comparison:  # Solo procede si tenemos al menos dos años para comparar
-                        df_comparison_demanda = df.copy()  # Usamos el df ya cargado en modo histórico
+                        if len(years_for_comparison) == 2:
+                            # Asegurarse de que están en el orden deseado (ej. [2023, 2024])
+                            years_for_comparison.sort()
+                        elif len(years_for_comparison) == 1:
+                            st.info(
+                                f"Solo se encontró un año de los deseados ({years_for_comparison[0]}) en modo histórico para la comparación. Se necesitan ambos años ({target_years_for_comparison[0]} y {target_years_for_comparison[1]}).")
+                            years_for_comparison = []  # Vaciar para no intentar graficar
+                        else:  # len(years_for_comparison) == 0
+                            st.info(
+                                f"No se encontraron datos para los años {target_years_for_comparison[0]} y {target_years_for_comparison[1]} en modo histórico para la comparación.")
+                            years_for_comparison = []  # Vaciar para no intentar graficar
 
-                        # Nos aseguramos de que solo tengamos los años que queremos comparar
-                        df_filtered_comparison = df_comparison_demanda[
-                            df_comparison_demanda['year'].isin(years_for_comparison)].copy()
+                        if years_for_comparison:  # Solo procede si tenemos al menos dos años para comparar
+                            df_comparison_demanda = df.copy()  # Usamos el df ya cargado en modo histórico
 
-                        # Convertimos la columna 'datetime' a una fecha sin el año, para comparar día a día
-                        # Esta 'sort_key' se usa para el gráfico horario
-                        df_filtered_comparison['sort_key'] = df_filtered_comparison['datetime'].apply(
-                            lambda dt: dt.replace(year=2000)  # Usar un año base para ordenar correctamente
-                        )
-                        df_filtered_comparison = df_filtered_comparison.sort_values('sort_key')
+                            # Nos aseguramos de que solo tengamos los años que queremos comparar
+                            df_filtered_comparison = df_comparison_demanda[
+                                df_comparison_demanda['year'].isin(years_for_comparison)].copy()
 
-                        # --- Gráfico de Demanda Horaria General Comparativa ---
-                        fig_comp_hourly = px.line(
-                            df_filtered_comparison,
-                            x="sort_key",  # Usamos la 'sort_key' que es datetime
-                            y="value",
-                            color="year",
-                            title="Demanda Horaria - Comparativa",
-                            labels={"sort_key": "Mes y Día", "value": "Demanda (MW)", "year": "Año"},
-                            hover_data={"year": True, "datetime": "|%Y-%m-%d %H:%M"}
-                        )
-                        fig_comp_hourly.update_xaxes(tickformat="%b %d")  # Formato para mostrar Mes y Día en el eje X
-                        st.plotly_chart(fig_comp_hourly, use_container_width=True)
-
-                        # --- Gráficos de Comparación de Métricas Diarias (Media, Mediana, Mínima, Máxima) ---
-                        # Agrupar por 'year' y 'month-day' para obtener las métricas diarias para cada año
-                        metrics_comp = df_filtered_comparison.groupby(
-                            ['year', df_filtered_comparison['datetime'].dt.strftime('%m-%d')])['value'].agg(
-                            ['mean', 'median', 'min', 'max']).reset_index()
-                        metrics_comp.columns = ['year', 'month_day', 'mean', 'median', 'min', 'max']
-
-                        # La corrección para el ValueError: day is out of range for month está aquí
-                        metrics_comp['sort_key'] = pd.to_datetime('2000-' + metrics_comp['month_day'],
-                                                                  format='%Y-%m-%d')
-                        metrics_comp = metrics_comp.sort_values('sort_key')
-
-                        metric_names = {
-                            'mean': 'Media diaria de demanda',
-                            'median': 'Mediana diaria de demanda',
-                            'min': 'Mínima diaria de demanda',
-                            'max': 'Máxima diaria de demanda',
-                        }
-
-                        for metric in ['mean', 'median', 'min', 'max']:
-                            fig = px.line(
-                                metrics_comp,
-                                x="sort_key",  # <--- CAMBIO CLAVE: Usar 'sort_key' (tipo datetime) para el eje X
-                                y=metric,
-                                color="year",
-                                title=metric_names[metric],
-                                labels={"sort_key": "Fecha (Mes-Día)", metric: "Demanda (MW)", "year": "Año"},
-                                # <--- CAMBIO EN ETIQUETA
+                            # Convertimos la columna 'datetime' a una fecha sin el año, para comparar día a día
+                            # Esta 'sort_key' se usa para el gráfico horario
+                            df_filtered_comparison['sort_key'] = df_filtered_comparison['datetime'].apply(
+                                lambda dt: dt.replace(year=2000)  # Usar un año base para ordenar correctamente
                             )
-                            fig.update_xaxes(tickformat="%b %d")  # Formato para mostrar solo Mes y Día
-                            # Si las líneas siguen entrecortadas, considera añadir `connectgaps=True`
-                            # fig.update_traces(connectgaps=True)
-                            st.plotly_chart(fig, use_container_width=True)
+                            df_filtered_comparison = df_filtered_comparison.sort_values('sort_key')
 
+                            # --- Gráfico de Demanda Horaria General Comparativa ---
+                            fig_comp_hourly = px.line(
+                                df_filtered_comparison,
+                                x="sort_key",  # Usamos la 'sort_key' que es datetime
+                                y="value",
+                                color="year",
+                                title="Demanda Horaria - Comparativa",
+                                labels={"sort_key": "Mes y Día", "value": "Demanda (MW)", "year": "Año"},
+                                hover_data={"year": True, "datetime": "|%Y-%m-%d %H:%M"}
+                            )
+                            fig_comp_hourly.update_xaxes(
+                                tickformat="%b %d")  # Formato para mostrar Mes y Día en el eje X
+                            st.plotly_chart(fig_comp_hourly, use_container_width=True)
 
-                    else:
-                        st.warning(f"No hay suficientes datos de Demanda disponibles para la comparación.")
+                            # --- Gráficos de Comparación de Métricas Diarias (Media, Mediana, Mínima, Máxima) ---
+                            # Agrupar por 'year' y 'month-day' para obtener las métricas diarias para cada año
+                            metrics_comp = df_filtered_comparison.groupby(
+                                ['year', df_filtered_comparison['datetime'].dt.strftime('%m-%d')])['value'].agg(
+                                ['mean', 'median', 'min', 'max']).reset_index()
+                            metrics_comp.columns = ['year', 'month_day', 'mean', 'median', 'min', 'max']
 
-                    # --- Gráfico de Identificación de años outliers (mantenida de antes) ---
-                    st.subheader("Identificación de Años Outliers (Demanda Anual Total)")
+                            # La corrección para el ValueError: day is out of range for month está aquí
+                            metrics_comp['sort_key'] = pd.to_datetime('2000-' + metrics_comp['month_day'],
+                                                                      format='%Y-%m-%d')
+                            metrics_comp = metrics_comp.sort_values('sort_key')
 
-                    st.markdown(
-                        "**Este gráfico muestra los años identificados como outliers en la demanda total anual.**\n\n"
-                        "En este caso, solo se detecta como outlier el año **2025**, lo cual es esperable ya que todavía no ha finalizado "
-                        "y su demanda acumulada es significativamente menor.\n\n"
-                        "Los años **2022, 2023 y 2024** presentan una demanda anual muy similar, en torno a los **700 MW**, por lo que "
-                        "no se consideran outliers según el criterio del rango intercuartílico (IQR)."
-                    )
+                            metric_names = {
+                                'mean': 'Media diaria de demanda',
+                                'median': 'Mediana diaria de demanda',
+                                'min': 'Mínima diaria de demanda',
+                                'max': 'Máxima diaria de demanda',
+                            }
 
-
-                    # Asegurarse de que el df tiene la columna 'year'
-                    if 'year' not in df.columns:
-                        df['year'] = df['datetime'].dt.year
-
-                    # Agrupar por año para obtener la demanda total anual
-                    df_annual_summary = df.groupby('year')['value'].sum().reset_index()
-                    df_annual_summary.rename(columns={'value': 'total_demand_MW'}, inplace=True)
-
-                    if not df_annual_summary.empty and len(df_annual_summary) > 1:
-                        # Calcular Q1, Q3 y el IQR
-                        Q1 = df_annual_summary['total_demand_MW'].quantile(0.25)
-                        Q3 = df_annual_summary['total_demand_MW'].quantile(0.75)
-                        IQR = Q3 - Q1
-
-                        # Calcular los límites para los outliers
-                        lower_bound = Q1 - 1.5 * IQR
-                        upper_bound = Q3 + 1.5 * IQR
-
-                        # Identificar los años que son outliers
-                        df_annual_summary['is_outlier'] = (
-                                (df_annual_summary['total_demand_MW'] < lower_bound) |
-                                (df_annual_summary['total_demand_MW'] > upper_bound)
-                        )
-
-                        # Crear el gráfico de barras
-                        fig_outliers = px.bar(
-                            df_annual_summary,
-                            x='year',
-                            y='total_demand_MW',
-                            color='is_outlier',  # Colorear las barras si son outliers
-                            title='Demanda Total Anual y Años Outlier',
-                            labels={'total_demand_MW': 'Demanda Total Anual (MW)', 'year': 'Año',
-                                    'is_outlier': 'Es Outlier'},
-                            color_discrete_map={False: 'skyblue', True: 'red'}  # Definir colores
-                        )
-
-                        st.plotly_chart(fig_outliers, use_container_width=True)
-
-                        # Mostrar los años identificados como outliers
-                        outlier_years = df_annual_summary[df_annual_summary['is_outlier']]['year'].tolist()
-                        if outlier_years:
-                            st.warning(
-                                f"Se han identificado los siguientes años como outliers: {', '.join(map(str, outlier_years))}")
+                            for metric in ['mean', 'median', 'min', 'max']:
+                                fig = px.line(
+                                    metrics_comp,
+                                    x="sort_key",  # <--- CAMBIO CLAVE: Usar 'sort_key' (tipo datetime) para el eje X
+                                    y=metric,
+                                    color="year",
+                                    title=metric_names[metric],
+                                    labels={"sort_key": "Fecha (Mes-Día)", metric: "Demanda (MW)", "year": "Año"},
+                                    # <--- CAMBIO EN ETIQUETA
+                                )
+                                fig.update_xaxes(tickformat="%b %d")  # Formato para mostrar solo Mes y Día
+                                # Si las líneas siguen entrecortadas, considera añadir `connectgaps=True`
+                                # fig.update_traces(connectgaps=True)
+                                st.plotly_chart(fig, use_container_width=True)
                         else:
-                            st.info("No se han identificado años outliers significativos (según el método IQR).")
-                    elif not df_annual_summary.empty and len(df_annual_summary) <= 1:
-                        st.info("Se necesitan al menos 2 años de datos para calcular outliers de demanda anual.")
-                    else:
-                        st.warning("No hay datos anuales disponibles para calcular outliers.")
-                # El siguiente 'else' se aplica si modo_actual NO es "Histórico"
-                elif modo_actual != "Histórico" and modo_actual != "Año específico":
-                    st.info(
-                        "Selecciona el modo 'Histórico' para ver la comparativa de años y la identificación de outliers anuales, o 'Año específico' para el histograma de demanda con outliers.")
+                            st.warning(f"No hay suficientes datos de Demanda disponibles para la comparación.")
+
+                        # --- Nuevo gráfico: Identificación de años outliers ---
+                        st.subheader("Identificación de Años Outliers (Demanda Anual Total)")
+
+                        # Asegurarse de que el df tiene la columna 'year'
+                        if 'year' not in df.columns:
+                            df['year'] = df['datetime'].dt.year
+
+                        # Agrupar por año para obtener la demanda total anual
+                        df_annual_summary = df.groupby('year')['value'].sum().reset_index()
+                        df_annual_summary.rename(columns={'value': 'total_demand_MW'}, inplace=True)
+
+                        if not df_annual_summary.empty and len(df_annual_summary) > 1:
+                            # Calcular Q1, Q3 y el IQR
+                            Q1 = df_annual_summary['total_demand_MW'].quantile(0.25)
+                            Q3 = df_annual_summary['total_demand_MW'].quantile(0.75)
+                            IQR = Q3 - Q1
+
+                            # Calcular los límites para los outliers
+                            lower_bound = Q1 - 1.5 * IQR
+                            upper_bound = Q3 + 1.5 * IQR
+
+                            # Identificar los años que son outliers
+                            df_annual_summary['is_outlier'] = (
+                                    (df_annual_summary['total_demand_MW'] < lower_bound) |
+                                    (df_annual_summary['total_demand_MW'] > upper_bound)
+                            )
+
+                            # Crear el gráfico de barras
+                            fig_outliers = px.bar(
+                                df_annual_summary,
+                                x='year',
+                                y='total_demand_MW',
+                                color='is_outlier',  # Colorear las barras si son outliers
+                                title='Demanda Total Anual y Años Outlier',
+                                labels={'total_demand_MW': 'Demanda Total Anual (MW)', 'year': 'Año',
+                                        'is_outlier': 'Es Outlier'},
+                                color_discrete_map={False: 'skyblue', True: 'red'}  # Definir colores
+                            )
+
+                            st.plotly_chart(fig_outliers, use_container_width=True)
+
+                            # Mostrar los años identificados como outliers
+                            outlier_years = df_annual_summary[df_annual_summary['is_outlier']]['year'].tolist()
+                            if outlier_years:
+                                st.warning(
+                                    f"Se han identificado los siguientes años como outliers: {', '.join(map(str, outlier_years))}")
+                            else:
+                                st.info("No se han identificado años outliers significativos (según el método IQR).")
+                        elif not df_annual_summary.empty and len(df_annual_summary) <= 1:
+                            st.info("Se necesitan al menos 2 años de datos para calcular outliers de demanda anual.")
+                        else:
+                            st.warning("No hay datos anuales disponibles para calcular outliers.")
+                    else:  # if modo_actual != "Histórico"
+                        st.info(
+                            "Selecciona el modo 'Histórico' en la pestaña 'Consulta de datos' para ver la comparativa de años y la identificación de outliers.")
 
             elif tabla == "balance":
                 fig = px.bar(df, x="datetime", y="value", color="primary_category", barmode="group", title="Balance Eléctrico")
                 st.plotly_chart(fig, use_container_width=True)
-                st.markdown(
-                    "**Balance eléctrico diario por categoría**\n\n"
-                    "Este gráfico representa el balance energético entre las distintas fuentes y usos diarios. Cada barra agrupa los componentes "
-                    "principales del sistema: generación, consumo, pérdidas y exportaciones.\n\n"
-                    "Es útil para entender si hay superávit, déficit o equilibrio en la red cada día, y cómo se distribuye el uso de energía entre sectores."
-                )
-            
             elif tabla == "generacion":
-                df['date'] = df['datetime'].dt.date  # Para reducir a nivel diario (si no lo tienes)
-
-                df_grouped = df.groupby(['date', 'primary_category'])['value'].sum().reset_index()
-
-                fig = px.line(
-                    df_grouped,
-                    x="date",
-                    y="value",
-                    color="primary_category",
-                    title="Generación diaria agregada por tipo"
-                )
+                fig = px.line(df, x="datetime", y="value", color="primary_category", title="Generación")
                 st.plotly_chart(fig, use_container_width=True)
-                st.markdown(
-                    "**Generación diaria agregada por tipo**\n\n"
-                    "Se visualiza la evolución de la generación eléctrica por fuente: renovables (eólica, solar, hidroeléctrica) y no renovables "
-                    "(gas, nuclear, etc.).\n\n"
-                    "Esta gráfica permite observar patrones como aumentos de producción renovable en días soleados o ventosos, así como la estabilidad "
-                    "de tecnologías de base como la nuclear. Es clave para analizar la transición energética."
-                )
-
-            
             elif tabla == "intercambios":
                 st.subheader("Mapa Coroplético de Intercambios Eléctricos")
 
-                st.markdown(
-                    "**Intercambios eléctricos internacionales**\n\n"
-                    "Este mapa muestra el **saldo neto de energía** (exportaciones menos importaciones) entre España y los países vecinos: "
-                    "**Francia, Portugal, Marruecos y Andorra**.\n\n"
-                    "Los valores positivos indican que **España exporta más energía de la que importa**, mientras que los negativos reflejan lo contrario.\n\n"
-                    "Este análisis es clave para comprender el papel de España como nodo energético regional, identificar dependencias o excedentes, "
-                    "y analizar cómo varían los flujos en situaciones especiales como picos de demanda o apagones."
-                )
-
-                    # Agrupamos y renombramos columnas
+                # Agrupamos y renombramos columnas
                 df_map = df.groupby("primary_category")["value"].sum().reset_index()
                 df_map.columns = ["pais_original", "Total"]
-
 
                 # Mapeo de nombres a inglés (para coincidir con el GeoJSON)
                 nombre_map = {
@@ -639,7 +536,7 @@ def main():
                     world_geo = json.load(f)
 
                 # Crear el mapa
-                world_map = folium.Map(location=[40, 20], zoom_start=4)
+                world_map = folium.Map(location=[40, -3], zoom_start=4)
 
                 folium.Choropleth(
                     geo_data=world_geo,
@@ -652,47 +549,11 @@ def main():
                     legend_name="Saldo neto de energía (MWh)"
                 ).add_to(world_map)
 
-                st.markdown(
-                    "**Mapa de intercambios internacionales de energía – Contexto del apagón del 28 de abril de 2025**\n\n"
-                    "Este mapa revela cómo se comportaron los **flujos internacionales de energía** en torno al **apagón del 28 de abril de 2025**.\n\n"
-                    "Una **disminución en los intercambios con Francia o Marruecos** podría indicar una disrupción en el suministro internacional "
-                    "o un corte de emergencia.\n\n"
-                    "Si **España aparece como exportadora neta incluso durante el apagón**, esto sugiere que el problema no fue de generación, "
-                    "sino posiblemente **interno** (fallo en la red o desconexión de carga).\n\n"
-                    "La inclusión de **Andorra y Marruecos** proporciona un contexto más completo del comportamiento eléctrico en la península "
-                    "y el norte de África.\n\n"
-                    "Este gráfico es crucial para analizar si los intercambios internacionales actuaron de forma inusual, lo cual puede dar pistas "
-                    "sobre causas externas o coordinación regional durante el evento."
-                )
-
                 # Mostrar en Streamlit
                 st_folium(world_map, width=1285)
 
             elif tabla == "intercambios_baleares":
-                # Filtramos las dos categorías
-                df_ib = df[df['primary_category'].isin(['Entradas', 'Salidas'])].copy()
-
-                # Agregamos por fecha para evitar múltiples por hora si fuera el caso
-                df_ib_grouped = df_ib.groupby(['datetime', 'primary_category'])['value'].sum().reset_index()
-
-                df_ib_grouped['value'] = df_ib_grouped['value'].abs()
-                st.markdown(
-                    "**Intercambios de energía con Baleares (Primer semestre 2025)**\n\n"
-                    "Durante el primer semestre de **2025**, las **salidas de energía hacia Baleares** superan consistentemente a las entradas, "
-                    "lo que indica que el sistema peninsular actúa mayormente como **exportador neto de energía**.\n\n"
-                    "Ambos flujos muestran una **tendencia creciente hacia junio**, especialmente las salidas, lo que podría reflejar un aumento "
-                    "en la demanda en Baleares o una mejora en la capacidad exportadora del sistema."
-                )
-                
-                fig = px.area(
-                    df_ib_grouped,
-                    x="datetime",
-                    y="value",
-                    color="primary_category",
-                    labels={"value": "Energía (MWh)", "datetime": "Fecha"},
-                    title="Intercambios con Baleares - Área Apilada (Magnitud)"
-                )
-
+                fig = px.line(df, x="datetime", y="value", title="Intercambios con Baleares")
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 fig = px.line(df, x="datetime", y="value", title="Visualización")
@@ -705,67 +566,8 @@ def main():
             st.info("Consulta primero los datos desde la pestaña anterior.")
 
     with tab4:
-        if tabla == "demanda":
-
-            # --- HEATMAP ---
-            df_heatmap = df.copy()
-            df_heatmap['weekday'] = df_heatmap['datetime'].dt.day_name()
-            df_heatmap['hour'] = df_heatmap['datetime'].dt.hour
-
-            days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-
-            heatmap_data = (
-                df_heatmap.groupby(['weekday', 'hour'])['value']
-                .mean()
-                .reset_index()
-                .pivot(index='weekday', columns='hour', values='value')
-                .reindex(days_order)
-            )
-            st.markdown(
-                "**Demanda promedio por día y hora**\n\n"
-                "La demanda eléctrica promedio es más alta entre semana, especialmente de **lunes a viernes**, "
-                "con picos concentrados entre las **7:00 y 21:00 horas**. El máximo se registra los **viernes alrededor de las 19:00 h**, "
-                "superando los **32 000 MW**.\n\n"
-                "En contraste, los **fines de semana** muestran una demanda notablemente más baja y estable."
-            )
-            fig1 = px.imshow(
-                heatmap_data,
-                labels=dict(x="Hora del día", y="Día de la semana", color="Demanda promedio (MW)"),
-                x=heatmap_data.columns,
-                y=heatmap_data.index,
-                color_continuous_scale="YlGnBu",
-                aspect="auto",
-            )
-            fig1.update_layout(title="Demanda promedio por día y hora")
-
-
-            st.plotly_chart(fig1, use_container_width=True)
-
-            # --- BOXPLOT ---
-            df_box = df.copy()
-
-            df_box["month"] = df_box["datetime"].dt.month
-            st.markdown(
-                "**Distribución de Demanda por mes (2025)**\n\n"
-                "La demanda eléctrica presenta **mayor variabilidad y valores más altos en los primeros tres meses del año**, "
-                "especialmente en **enero**.\n\n"
-                "En **abril**, se observa una mayor cantidad de valores atípicos a la baja, lo cual coincide con el "
-                "**apagón nacional del 28/04/2025**, donde España estuvo sin luz durante aproximadamente 8 a 10 horas.\n\n"
-                "A partir de **mayo**, la demanda se estabiliza ligeramente, con una reducción progresiva en la mediana mensual."
-            )
-            fig2 = px.box(
-                df_box,
-                x="month",
-                y="value",
-                title="Distribución de Demanda por mes",
-                labels={"value": "Demanda (MWh)", "hour": "Hora del Día"}
-            )
-
-
-            st.plotly_chart(fig2, use_container_width=True)
-
-        else:
-            st.markdown("Nada que ver... de momento")
+        st.subheader("Gráficos de interés sobre el apagón")
+        st.markdown("(Pendiente de implementación)")
 
 if __name__ == "__main__":
     main()
