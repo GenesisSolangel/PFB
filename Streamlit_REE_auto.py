@@ -331,15 +331,17 @@ def main():
 
     with tab1:  # Reordeno esto para que la tab2 se cargue primero y defina el estado
         st.subheader("¿Qué es esta app?")
-        st.markdown("""Este proyecto explora los datos públicos de la **Red Eléctrica de España (REE)** a través de su API.
-Se analizan aspectos como:
+        st.markdown("""
+        Este proyecto explora los datos públicos de la **Red Eléctrica de España (REE)** a través de su API.
+        Se analizan aspectos como:
 
-- La **demanda eléctrica** por hora.
-- El **balance eléctrico** por día.
-- La **generación** por mes.
-- Los **intercambios programados** con otros países.
+        - La **demanda eléctrica** por hora.
+        - El **balance eléctrico** por día.
+        - La **generación** por mes.
+        - Los **intercambios programados** con otros países.
 
-Estos datos permiten visualizar la evolución energética de España y generar análisis útiles para planificación y sostenibilidad.""")
+        Estos datos permiten visualizar la evolución energética de España y generar análisis útiles para planificación y sostenibilidad.
+        """)
 
     with tab3:
         st.subheader("Visualización")
@@ -501,11 +503,22 @@ Estos datos permiten visualizar la evolución energética de España y generar a
                             # Si las líneas siguen entrecortadas, considera añadir `connectgaps=True`
                             # fig.update_traces(connectgaps=True)
                             st.plotly_chart(fig, use_container_width=True)
+
+
                     else:
                         st.warning(f"No hay suficientes datos de Demanda disponibles para la comparación.")
 
                     # --- Gráfico de Identificación de años outliers (mantenida de antes) ---
                     st.subheader("Identificación de Años Outliers (Demanda Anual Total)")
+
+                    st.markdown(
+                        "**Este gráfico muestra los años identificados como outliers en la demanda total anual.**\n\n"
+                        "En este caso, solo se detecta como outlier el año **2025**, lo cual es esperable ya que todavía no ha finalizado "
+                        "y su demanda acumulada es significativamente menor.\n\n"
+                        "Los años **2022, 2023 y 2024** presentan una demanda anual muy similar, en torno a los **700 MW**, por lo que "
+                        "no se consideran outliers según el criterio del rango intercuartílico (IQR)."
+                    )
+
 
                     # Asegurarse de que el df tiene la columna 'year'
                     if 'year' not in df.columns:
@@ -564,6 +577,13 @@ Estos datos permiten visualizar la evolución energética de España y generar a
             elif tabla == "balance":
                 fig = px.bar(df, x="datetime", y="value", color="primary_category", barmode="group", title="Balance Eléctrico")
                 st.plotly_chart(fig, use_container_width=True)
+                st.markdown(
+                    "**Balance eléctrico diario por categoría**\n\n"
+                    "Este gráfico representa el balance energético entre las distintas fuentes y usos diarios. Cada barra agrupa los componentes "
+                    "principales del sistema: generación, consumo, pérdidas y exportaciones.\n\n"
+                    "Es útil para entender si hay superávit, déficit o equilibrio en la red cada día, y cómo se distribuye el uso de energía entre sectores."
+                )
+            
             elif tabla == "generacion":
                 df['date'] = df['datetime'].dt.date  # Para reducir a nivel diario (si no lo tienes)
 
@@ -577,12 +597,31 @@ Estos datos permiten visualizar la evolución energética de España y generar a
                     title="Generación diaria agregada por tipo"
                 )
                 st.plotly_chart(fig, use_container_width=True)
+                st.markdown(
+                    "**Generación diaria agregada por tipo**\n\n"
+                    "Se visualiza la evolución de la generación eléctrica por fuente: renovables (eólica, solar, hidroeléctrica) y no renovables "
+                    "(gas, nuclear, etc.).\n\n"
+                    "Esta gráfica permite observar patrones como aumentos de producción renovable en días soleados o ventosos, así como la estabilidad "
+                    "de tecnologías de base como la nuclear. Es clave para analizar la transición energética."
+                )
+
+            
             elif tabla == "intercambios":
                 st.subheader("Mapa Coroplético de Intercambios Eléctricos")
 
-                # Agrupamos y renombramos columnas
+                st.markdown(
+                    "**Intercambios eléctricos internacionales**\n\n"
+                    "Este mapa muestra el **saldo neto de energía** (exportaciones menos importaciones) entre España y los países vecinos: "
+                    "**Francia, Portugal, Marruecos y Andorra**.\n\n"
+                    "Los valores positivos indican que **España exporta más energía de la que importa**, mientras que los negativos reflejan lo contrario.\n\n"
+                    "Este análisis es clave para comprender el papel de España como nodo energético regional, identificar dependencias o excedentes, "
+                    "y analizar cómo varían los flujos en situaciones especiales como picos de demanda o apagones."
+                )
+
+                    # Agrupamos y renombramos columnas
                 df_map = df.groupby("primary_category")["value"].sum().reset_index()
                 df_map.columns = ["pais_original", "Total"]
+
 
                 # Mapeo de nombres a inglés (para coincidir con el GeoJSON)
                 nombre_map = {
@@ -613,6 +652,19 @@ Estos datos permiten visualizar la evolución energética de España y generar a
                     legend_name="Saldo neto de energía (MWh)"
                 ).add_to(world_map)
 
+                st.markdown(
+                    "**Mapa de intercambios internacionales de energía – Contexto del apagón del 28 de abril de 2025**\n\n"
+                    "Este mapa revela cómo se comportaron los **flujos internacionales de energía** en torno al **apagón del 28 de abril de 2025**.\n\n"
+                    "Una **disminución en los intercambios con Francia o Marruecos** podría indicar una disrupción en el suministro internacional "
+                    "o un corte de emergencia.\n\n"
+                    "Si **España aparece como exportadora neta incluso durante el apagón**, esto sugiere que el problema no fue de generación, "
+                    "sino posiblemente **interno** (fallo en la red o desconexión de carga).\n\n"
+                    "La inclusión de **Andorra y Marruecos** proporciona un contexto más completo del comportamiento eléctrico en la península "
+                    "y el norte de África.\n\n"
+                    "Este gráfico es crucial para analizar si los intercambios internacionales actuaron de forma inusual, lo cual puede dar pistas "
+                    "sobre causas externas o coordinación regional durante el evento."
+                )
+
                 # Mostrar en Streamlit
                 st_folium(world_map, width=1285)
 
@@ -624,7 +676,14 @@ Estos datos permiten visualizar la evolución energética de España y generar a
                 df_ib_grouped = df_ib.groupby(['datetime', 'primary_category'])['value'].sum().reset_index()
 
                 df_ib_grouped['value'] = df_ib_grouped['value'].abs()
-
+                st.markdown(
+                    "**Intercambios de energía con Baleares (Primer semestre 2025)**\n\n"
+                    "Durante el primer semestre de **2025**, las **salidas de energía hacia Baleares** superan consistentemente a las entradas, "
+                    "lo que indica que el sistema peninsular actúa mayormente como **exportador neto de energía**.\n\n"
+                    "Ambos flujos muestran una **tendencia creciente hacia junio**, especialmente las salidas, lo que podría reflejar un aumento "
+                    "en la demanda en Baleares o una mejora en la capacidad exportadora del sistema."
+                )
+                
                 fig = px.area(
                     df_ib_grouped,
                     x="datetime",
@@ -662,7 +721,13 @@ Estos datos permiten visualizar la evolución energética de España y generar a
                 .pivot(index='weekday', columns='hour', values='value')
                 .reindex(days_order)
             )
-
+            st.markdown(
+                "**Demanda promedio por día y hora**\n\n"
+                "La demanda eléctrica promedio es más alta entre semana, especialmente de **lunes a viernes**, "
+                "con picos concentrados entre las **7:00 y 21:00 horas**. El máximo se registra los **viernes alrededor de las 19:00 h**, "
+                "superando los **32 000 MW**.\n\n"
+                "En contraste, los **fines de semana** muestran una demanda notablemente más baja y estable."
+            )
             fig1 = px.imshow(
                 heatmap_data,
                 labels=dict(x="Hora del día", y="Día de la semana", color="Demanda promedio (MW)"),
@@ -680,7 +745,14 @@ Estos datos permiten visualizar la evolución energética de España y generar a
             df_box = df.copy()
 
             df_box["month"] = df_box["datetime"].dt.month
-
+            st.markdown(
+                "**Distribución de Demanda por mes (2025)**\n\n"
+                "La demanda eléctrica presenta **mayor variabilidad y valores más altos en los primeros tres meses del año**, "
+                "especialmente en **enero**.\n\n"
+                "En **abril**, se observa una mayor cantidad de valores atípicos a la baja, lo cual coincide con el "
+                "**apagón nacional del 28/04/2025**, donde España estuvo sin luz durante aproximadamente 8 a 10 horas.\n\n"
+                "A partir de **mayo**, la demanda se estabiliza ligeramente, con una reducción progresiva en la mediana mensual."
+            )
             fig2 = px.box(
                 df_box,
                 x="month",
