@@ -296,7 +296,7 @@ def get_data_from_supabase(table_name, start_date, end_date, page_size=1000):
 def main():
     st.title("Análisis de la Red Eléctrica Española")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Descripción", "Consulta de datos", "Visualización", "Extras"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Descripción", "Consulta de datos", "Visualización", "Predicciones", "Extras"])
 
     with tab2:  # Mueve el contexto de la tab2 aquí para que `modo` se defina antes de usarse en session_state
         st.subheader("Consulta de datos")
@@ -588,6 +588,7 @@ def main():
                         "Selecciona el modo 'Histórico' para ver la comparativa de años y la identificación de outliers anuales, o 'Año específico' para el histograma de demanda con outliers.")
 
             elif tabla == "balance":
+
                 df_balance = df.groupby([df["datetime"].dt.date, "primary_category"])["value"].sum().reset_index()
                 df_balance.rename(columns={"datetime": "date"}, inplace=True)
                 df_balance = df_balance.sort_values("date")
@@ -795,6 +796,10 @@ def main():
             st.info("Consulta primero los datos desde la pestaña anterior.")
 
     with tab4:
+        st.subheader("Predicciones basadas en machine learning")
+        st.markdown(""" Pendiente de implementar. """)
+
+    with tab5:
         if tabla == "demanda":
 
             # --- HEATMAP ---
