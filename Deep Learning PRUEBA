@@ -1,0 +1,139 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta, timezone
+import plotly.express as px
+from supabase import create_client, Client
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import SimpleRNN, LSTM, Dense
+
+
+SUPABASE_URL = "https://yhkeqdysmjirdrfrmvjd.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inloa2VxZHlzbWppcmRyZnJtdmpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkwMTA0NDQsImV4cCI6MjA2NDU4NjQ0NH0.Hn0G1jCxDuhzb4AnZyJAC3KGQGIq5Cxn8wgEc-_1fLo"
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+# Últimos 90 días de datos
+
+def get_demanda_data():
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=90)
+    response = (
+        supabase.table("demanda")
+        .select("datetime,value")
+        .gte("datetime", start.isoformat())
+        .lte("datetime", end.isoformat())
+        .execute()
+    )
+    df = pd.DataFrame(response.data)
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    df.sort_values('datetime', inplace=True)
+    return df
+
+
+# Preprocesado: normaliza y genera entrenamiento
+
+
+def preprocess_for_rnn(df, window_size=24):
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(df[['value']])
+
+    X, y = [], []
+    for i in range(len(scaled) - window_size):
+        X.append(scaled[i:i+window_size])
+        y.append(scaled[i+window_size])
+
+    X = np.array(X).reshape(-1, window_size, 1)
+    y = np.array(y)
+    return X, y, scaler
+
+
+
+
+# Entrenamiento del modelo RNN o LSTM
+
+def train_model(X, y, model_type='RNN', loss_fn='mse'):
+    model = Sequential()
+    if model_type == 'RNN':
+        model.add(SimpleRNN(50, activation='tanh', input_shape=(X.shape[1], 1)))
+    elif model_type == 'LSTM':
+        model.add(LSTM(50, activation='tanh', input_shape=(X.shape[1], 1)))
+    model.add(Dense(1))
+    model.compile(optimizer='adam', loss=loss_fn)
+    history = model.fit(X, y, epochs=10, batch_size=32, verbose=0)
+    return model, history
+
+
+
+# Predicción de un solo paso (One-Step)
+
+def one_step_prediction(model, X, scaler):
+    pred = model.predict(X)
+    return scaler.inverse_transform(pred)
+
+
+
+# Predicción múltiple: predice varios pasos futuros
+
+def multi_step_prediction(model, initial_sequence, steps, scaler):
+    sequence = initial_sequence.copy()
+    predictions = []
+    for _ in range(steps):
+        pred = model.predict(sequence.reshape(1, -1, 1))
+        predictions.append(pred[0, 0])
+        sequence = np.append(sequence[1:], pred[0, 0]).reshape(-1, 1)
+    return scaler.inverse_transform(np.array(predictions).reshape(-1, 1))
+
+
+
+# Interfaz de Streamlit principal
+
+def main():
+    st.title("Predicción de Demanda con RNN y LSTM")
+
+    df = get_demanda_data()
+    st.write("### Datos recientes de demanda")
+    st.line_chart(df.set_index("datetime")['value'], height=250)
+
+    ###Parámetros ajustables desde la interfaz###
+    window_size = st.slider("Tamaño de la secuencia (horas)", min_value=12, max_value=72, step=12, value=24)
+    model_type = st.selectbox("Tipo de modelo", ["RNN", "LSTM"])
+    loss_function = st.selectbox("Función de pérdida", ["mse", "mae"])
+
+    X, y, scaler = preprocess_for_rnn(df, window_size)
+    model, history = train_model(X, y, model_type=model_type, loss_fn=loss_function)
+
+    ###Visualizar pérdida###
+    st.subheader("Gráfico de pérdida durante entrenamiento")
+    fig_loss = px.line(y=history.history[loss_function], labels={"x": "Época", "y": f"Pérdida ({loss_function.upper()})"}, title="Evolución de la pérdida")
+    st.plotly_chart(fig_loss, use_container_width=True)
+
+    ###One-step prediction (últimos valores conocidos)###
+    y_pred = one_step_prediction(model, X, scaler)
+    y_true = scaler.inverse_transform(y)
+
+    result_df = pd.DataFrame({
+        "datetime": df['datetime'][window_size:].values,
+        "Real": y_true.flatten(),
+        "Predicción": y_pred.flatten()
+    })
+
+    st.subheader("Predicción One-Step")
+    fig = px.line(result_df, x="datetime", y=["Real", "Predicción"], title="Predicción de Demanda")
+    st.plotly_chart(fig, use_container_width=True)
+
+    ###Predicción múltiple futura###
+    st.subheader("Predicción Multiple-Step")
+    steps = st.slider("Número de pasos a predecir", min_value=1, max_value=48, value=12)
+    latest_seq = X[-1].reshape(-1, 1)
+    multistep = multi_step_prediction(model, latest_seq, steps, scaler)
+
+    future_dates = pd.date_range(df["datetime"].iloc[-1] + timedelta(hours=1), periods=steps, freq='H')
+    future_df = pd.DataFrame({"datetime": future_dates, "Predicción": multistep.flatten()})
+
+    fig_multi = px.line(future_df, x="datetime", y="Predicción", title="Predicciones Múltiples")
+    st.plotly_chart(fig_multi, use_container_width=True)
+
+if __name__ == "__main__":
+    main()
