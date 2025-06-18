@@ -20,7 +20,7 @@ from branca.element import Template, MacroElement
 import numpy as np
 from sklearn.metrics import mean_squared_error
 import pickle
-from tensorflow.keras.models import load_model
+import onnxruntime as ort
 
 
 st.set_page_config(page_title="Red Eléctrica", layout="centered")
@@ -813,20 +813,23 @@ def main():
         model_type = st.selectbox("Selecciona el modelo", ["SimpleRNN", "LSTM", "GRU"])
         loss_function = st.selectbox("Función de pérdida", ["mse", "mae"])
 
-        model_filename = f"models/{model_type}_model_{loss_function}.keras"
-        scaler_filename = f"models/scaler_{model_type}_{loss_function}.pkl"
-        history_filename = f"models/{model_type}_history_{loss_function}.pkl"
+        model_filename = f'models/{model_type}_model_{loss_function}.onnx'
+        scaler_filename = f'models/scaler_{model_type}_{loss_function}.pkl'
+        history_filename = f'models/{model_type}_history_{loss_function}.pkl'
 
-        # -------------------------------------------
-        # CARGA DEL MODELO Y SCALER
-        # -------------------------------------------
         try:
-            model = load_model(model_filename)
+            # Cargar modelo ONNX
+            session  = ort.InferenceSession(model_filename)
+
+            # Cargar scaler
             with open(scaler_filename, 'rb') as f:
                 scaler = pickle.load(f)
+
+            # Cargar history
             with open(history_filename, 'rb') as f:
                 history = pickle.load(f)
-            st.success(f"Modelo {model_type} con pérdida {loss_function} cargado correctamente.")
+
+            st.success(f"Modelo {model_filename} cargado correctamente.")
 
             # -------------------------------------------
             # GRÁFICO DE FUNCIÓN DE PÉRDIDA
@@ -852,8 +855,7 @@ def main():
             df_prediccion['value_scaled'] = scaler.transform(df_prediccion[['value']])
 
             # Preparación de datos
-            n_pasos = 24  # Puedes ponerlo como parámetro si quieres
-            n_pred = 24  # Puedes ponerlo como parámetro si quieres
+            n_pasos = 24
 
             def crear_secuencias(datos, n_pasos):
                 X, y = [], []
@@ -863,14 +865,22 @@ def main():
                 return np.array(X), np.array(y)
 
             X, y = crear_secuencias(df_prediccion['value_scaled'].values, n_pasos)
-            X = X.reshape((X.shape[0], X.shape[1], 1))
+            X = X.reshape((X.shape[0], X.shape[1], 1)).astype('float32')
+
+            # Preparar la sesión ONNX
+            input_name = session.get_inputs()[0].name
 
             # -------------------------------------------
             # ONE-STEP PREDICTION
             # -------------------------------------------
             st.subheader("One-Step Prediction")
 
-            y_pred_scaled = model.predict(X)
+            y_pred_scaled = []
+            for i in range(X.shape[0]):
+                pred = session.run(None, {input_name: X[i:i + 1]})[0]
+                y_pred_scaled.append(pred[0][0])
+
+            y_pred_scaled = np.array(y_pred_scaled).reshape(-1, 1)
             y_pred = scaler.inverse_transform(y_pred_scaled)
             y_real = scaler.inverse_transform(y.reshape(-1, 1))
 
@@ -890,21 +900,26 @@ def main():
             # -------------------------------------------
             st.subheader("Multi-Step Prediction")
 
+            # Elegir número de pasos a predecir
+            n_pred = st.slider("Número de pasos a predecir (Multi-Step)", min_value=1, max_value=168, value=24, step=1)
+
             ultimos_valores = df_prediccion['value_scaled'].values[-n_pasos:].tolist()
             predicciones_multi = []
 
             for _ in range(n_pred):
-                entrada = np.array(ultimos_valores[-n_pasos:]).reshape((1, n_pasos, 1))
-                pred_scaled = model.predict(entrada)[0][0]
+                entrada = np.array(ultimos_valores[-n_pasos:]).reshape((1, n_pasos, 1)).astype('float32')
+                pred_scaled = session.run(None, {input_name: entrada})[0][0][0]
                 predicciones_multi.append(pred_scaled)
                 ultimos_valores.append(pred_scaled)
 
             predicciones_multi = scaler.inverse_transform(np.array(predicciones_multi).reshape(-1, 1)).flatten()
 
-            fechas_futuras = pd.date_range(start=df_prediccion.index[-1] + pd.Timedelta(hours=1), periods=n_pred, freq='H')
+            fechas_futuras = pd.date_range(start=df_prediccion.index[-1] + pd.Timedelta(hours=1), periods=n_pred,
+                                           freq='H')
 
             fig_multi = go.Figure()
-            fig_multi.add_trace(go.Scatter(x=df_prediccion.index, y=df_prediccion['value'], mode='lines', name='Datos reales'))
+            fig_multi.add_trace(
+                go.Scatter(x=df_prediccion.index, y=df_prediccion['value'], mode='lines', name='Datos reales'))
             fig_multi.add_trace(
                 go.Scatter(x=fechas_futuras, y=predicciones_multi, mode='lines+markers', name='Predicción Multi-Step'))
 
