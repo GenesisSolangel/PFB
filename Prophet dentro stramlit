@@ -1,0 +1,55 @@
+       
+        #PREDICCIÓN CON FACEBOOK PROPHET
+ 
+        from prophet import Prophet
+
+        st.subheader("Predicción con Facebook Prophet")
+
+        if "ree_data" in st.session_state and not st.session_state["ree_data"].empty:
+            df_prophet = st.session_state["ree_data"].copy()
+            df_prophet = df_prophet[["datetime", "value"]].dropna()
+
+            st.markdown("### Selecciona la granularidad de tiempo")
+
+            granularidad = st.selectbox("Frecuencia para agrupar:", [
+                "Diario", "Semanal", "Mensual", "Trimestral", "Semestral", "Anual"
+            ])
+
+            freq_map = {
+                "Diario": "D",
+                "Semanal": "W",
+                "Mensual": "M",
+                "Trimestral": "Q",
+                "Semestral": "2Q",
+                "Anual": "Y"
+            }
+            freq = freq_map[granularidad]
+
+            # Agrupar datos
+            df_grouped = df_prophet.set_index("datetime").resample(freq).sum().reset_index()
+            df_grouped = df_grouped.rename(columns={"datetime": "ds", "value": "y"})
+
+            st.write("Datos preparados para Prophet:", df_grouped.tail())
+
+            # Entrenar modelo Prophet
+            modelo = Prophet()
+            modelo.fit(df_grouped)
+
+            # Predicción futura
+            pasos = st.slider("¿Cuántos pasos a futuro quieres predecir?", min_value=10, max_value=100, value=30)
+            futuro = modelo.make_future_dataframe(periods=pasos, freq=freq)
+            forecast = modelo.predict(futuro)
+
+            st.markdown("### Predicción de valores futuros")
+            fig1 = modelo.plot(forecast)
+            st.pyplot(fig1)
+
+            st.markdown("### Componentes del modelo (tendencia y estacionalidad)")
+            fig2 = modelo.plot_components(forecast)
+            st.pyplot(fig2)
+
+            with st.expander("Ver tabla de predicciones"):
+                st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(pasos))
+
+        else:
+            st.warning("Primero consulta datos desde la pestaña 'Consulta de datos'.")
