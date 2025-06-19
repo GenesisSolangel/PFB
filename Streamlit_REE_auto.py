@@ -21,6 +21,8 @@ import numpy as np
 from sklearn.metrics import mean_squared_error
 import pickle
 import onnxruntime as ort
+import joblib
+from prophet.plot import plot_plotly, plot_components_plotly
 
 
 st.set_page_config(page_title="Red Eléctrica", layout="centered")
@@ -302,7 +304,7 @@ def get_data_from_supabase(table_name, start_date, end_date, page_size=1000):
 def main():
     st.title("Análisis de la Red Eléctrica Española")
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Descripción", "Consulta de datos", "Visualización", "Predicciones", "Extras"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Descripción", "Consulta de datos", "Visualización", "Predicciones","Prophet", "Extras"])
 
     with tab2:  # Mueve el contexto de la tab2 aquí para que `modo` se defina antes de usarse en session_state
         st.subheader("Consulta de datos")
@@ -930,6 +932,64 @@ def main():
             st.warning(f"❌ El modelo {model_type} con pérdida {loss_function} no se encuentra o ocurrió un error.\n{e}")
 
     with tab5:
+        st.write("Modelo con Facebook Prophet")
+        # Cargar datos de predicción
+        df_prophet = pd.read_csv('datos_prediccion_prophet.csv')
+        df_prophet['ds'] = pd.to_datetime(df_prophet['ds'])
+
+        # Configuración de granularidades
+        granularidades = {
+            'Diaria': 'diaria',
+            'Semanal': 'semanal',
+            'Mensual': 'mensual',
+            'Trimestral': 'trimestral',
+            'Semestral': 'semestral',
+            'Anual': 'anual'
+        }
+
+        st.title("Predicciones con Prophet")
+        granularidad_seleccionada = st.selectbox("Selecciona la granularidad:", list(granularidades.keys()))
+
+        # Cargar el modelo correspondiente
+        nombre_granularidad = granularidades[granularidad_seleccionada]
+        try:
+            model_prophet = joblib.load(f'models/prophet_model_{nombre_granularidad}.joblib')
+            st.success(f"Modelo {granularidad_seleccionada} cargado correctamente.")
+        except Exception as e:
+            st.error(f"No se pudo cargar el modelo para {granularidad_seleccionada}: {e}")
+            st.stop()
+
+        # Crear fechas futuras (puedes hacer slider si quieres)
+        n_pred = st.slider("Número de pasos a predecir:", min_value=10, max_value=500, value=100)
+
+        # Determinar frecuencia para futuras fechas
+        freq_map = {
+            'diaria': 'D',
+            'semanal': 'W',
+            'mensual': 'M',
+            'trimestral': 'Q',
+            'semestral': '2Q',
+            'anual': 'A'
+        }
+        freq = freq_map[nombre_granularidad]
+
+        # Preparar datos para predicción futura
+        future = model_prophet.make_future_dataframe(periods=n_pred, freq=freq)
+
+        # Realizar predicción
+        forecast = model_prophet.predict(future)
+
+        # Mostrar gráfica de predicción
+        st.subheader("Predicción")
+        fig1 = plot_plotly(model_prophet, forecast)
+        st.plotly_chart(fig1, use_container_width=True)
+
+        # Mostrar componentes
+        st.subheader("Componentes de la predicción")
+        fig2 = plot_components_plotly(model_prophet, forecast)
+        st.plotly_chart(fig2, use_container_width=True)
+
+    with tab6:
         if tabla == "demanda":
 
             # --- HEATMAP ---
