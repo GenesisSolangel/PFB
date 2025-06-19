@@ -1,0 +1,63 @@
+# entrenar_prophet.py
+import pandas as pd
+from prophet import Prophet
+
+#Cargar datos (exportados desde Supabase o CSV ya generado por tu app)
+df = pd.read_csv("datos_prophet.csv")  # Este CSV lo puedes generar en tu app o descargarlo desde Supabase
+df["datetime"] = pd.to_datetime(df["datetime"])
+df = df.rename(columns={"datetime": "ds", "value": "y"})
+
+# Agrupar si tus datos son horarios
+df = df.set_index("ds").resample("D").sum().reset_index()
+
+#Entrenar el modelo Prophet
+modelo = Prophet()
+modelo.fit(df)
+
+#Predecir N días
+futuro = modelo.make_future_dataframe(periods=30, freq="D")
+forecast = modelo.predict(futuro)
+
+#Guardar predicción como CSV
+forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].to_csv("prediccion_prophet.csv", index=False)
+print("✅ Predicción guardada en prediccion_prophet.csv")
+
+
+
+#######   Dentro de tab4 ###
+        st.subheader("Predicción con Prophet (modelo ya entrenado)")
+
+        try:
+            forecast = pd.read_csv("prediccion_prophet.csv")
+            forecast["ds"] = pd.to_datetime(forecast["ds"])
+
+            st.markdown("### Predicción de valores futuros")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat"], mode='lines', name="Predicción"))
+            fig.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat_upper"], mode='lines', name="Límite superior", line=dict(dash="dot")))
+            fig.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat_lower"], mode='lines', name="Límite inferior", line=dict(dash="dot")))
+            st.plotly_chart(fig, use_container_width=True)
+
+            with st.expander("Ver tabla de predicción"):
+                st.dataframe(forecast.tail(30))
+
+        except Exception as e:
+            st.error(f"Error al cargar la predicción de Prophet: {e}")
+
+###hasta aquí sería un documento.py####
+
+
+#PARTE 2 #
+
+######## esto es para generar los datos_prophet.csv#####
+
+#IRIA EN TAB2 JUSTO DESPUES DE ESTA LINEA :st.success("Datos cargados correctamente desde Supabase.")
+
+
+if "ree_data" in st.session_state and not st.session_state["ree_data"].empty:
+    df_export = st.session_state["ree_data"][["datetime", "value"]].dropna()
+    df_export.to_csv("datos_prophet.csv", index=False)
+    st.success("✅ Archivo 'datos_prophet.csv' exportado correctamente.")
+
+
+
