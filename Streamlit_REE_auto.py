@@ -1073,9 +1073,9 @@ def main():
             {
                 "nombre": "Lucía Varela",
                 "rol": "Desarrolladora | Científica de Datos",
-                "github": "https://github.com/usuario2",
-                "linkedin": "https://linkedin.com/in/usuario2",
-                "imagen_url": "https://media.licdn.com/dms/image/v2/D4D03AQGTzePA7mYCCg/profile-displayphoto-shrink_400_400/profile-displayphoto-shrink_400_400/0/1710544796281?e=1755734400&v=beta&t=EYzHk_ajDGLe20r2PNyVE_ig9R3DcM4xFUhs_P0E1Ps"  # Sustituir por la URL real
+                "github": "https://github.com/luvare",
+                "linkedin": "https://www.linkedin.com/in/lucia-varela-4789bb16a/",
+                "imagen_url": "https://media.licdn.com/dms/image/v2/D4D35AQHAznsP79iWlA/profile-framedphoto-shrink_400_400/B4DZX32D4.HsAg-/0/1743619899433?e=1751302800&v=beta&t=fslO0FqGH_rwnuydPP2RaBeidXL0chbKHTB52w9Qnz4"  # Sustituir por la URL real
             },
             {
                 "nombre": "Génesis Rodríguez",
