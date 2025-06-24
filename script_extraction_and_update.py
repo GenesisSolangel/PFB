@@ -35,7 +35,8 @@ ENDPOINTS = {
 # Cargar las variables de entorno desde el archivo .env
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 # ------------------------------ UTILIDADES ------------------------------
