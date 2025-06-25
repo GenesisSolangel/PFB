@@ -43,7 +43,7 @@ ENDPOINTS = {
     "intercambios_baleares": ("intercambios/enlace-baleares", "day"),
 }
 
-# Cargar las variables de entorno desde el archivo .env
+# Cargamos las variables de entorno desde el archivo .env
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -107,14 +107,14 @@ def insertar_en_supabase(nombre_tabla, df):
     # Reemplazamos NaN por None
     # df = df.where(pd.notnull(df), None)
 
-    # Convertir a lista de diccionarios e insertar
+    # Convertimos a lista de diccionarios e insertar
     data = df.to_dict(orient="records")
 
     try:
         supabase.table(nombre_tabla).insert(data).execute()
-        print(f"✅ Insertados en '{nombre_tabla}': {len(data)} filas")
+        print(f"Insertados en '{nombre_tabla}': {len(data)} filas")
     except Exception as e:
-        print(f"❌ Error al insertar en '{nombre_tabla}': {e}")
+        print(f"Error al insertar en '{nombre_tabla}': {e}")
 
 
 # ------------------------------ FUNCIONES DE DESCARGA ------------------------------
@@ -196,12 +196,36 @@ def get_data_for_last_x_years(num_years=3):
 
     return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
+# Función para filtrar datos duplicados antes de insertar a Supabase
+def filtrar_registros_nuevos(nombre_tabla, df_local):
+    from supabase import create_client, Client
+    import os
 
-# Función para actualizar los datos desde la API cada 24 horas
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    supabase: Client = create_client(url, key)
+
+    datetimes = df_local['datetime'].dt.strftime('%Y-%m-%dT%H:%M:%S%z').tolist()
+
+    # Para no saturar la petición, consultamos por rangos de fechas
+    existing_records = []
+    chunk_size = 1000
+
+    for i in range(0, len(datetimes), chunk_size):
+        chunk = datetimes[i:i + chunk_size]
+        response = supabase.table(nombre_tabla).select('datetime').in_('datetime', chunk).execute()
+        existing_datetimes = [item['datetime'] for item in response.data]
+        existing_records.extend(existing_datetimes)
+
+    if existing_records:
+        df_local = df_local[~df_local['datetime'].astype(str).isin(existing_records)]
+
+    return df_local
+
+# Función para actualizar de Supabase, funciona con GitHub Actions
 def actualizar_datos_desde_api():
-    print(f"[{datetime.now()}] ⏳ Ejecutando extracción desde API...")
     current_date = datetime.now()
-    start_date = current_date - timedelta(days=1)
+    start_date = current_date - timedelta(days=3)
 
     all_dfs = []
 
@@ -238,7 +262,7 @@ def actualizar_datos_desde_api():
             all_dfs.append(df)
             tiempo.sleep(1)
         else:
-            print(f"⚠️ No se obtuvieron datos de '{name}'")
+            print(f"No se obtuvieron datos de '{name}'")
 
     if all_dfs:
         df_nuevo = pd.concat(all_dfs, ignore_index=True)
@@ -248,32 +272,17 @@ def actualizar_datos_desde_api():
             "balance": df_nuevo[df_nuevo["endpoint"] == "balance"].drop(columns=["endpoint"]),
             "generacion": df_nuevo[df_nuevo["endpoint"] == "generacion"].drop(columns=["endpoint", "sub_category"]),
             "intercambios": df_nuevo[df_nuevo["endpoint"] == "intercambios"].drop(columns=["endpoint"]),
-            "intercambios_baleares": df_nuevo[df_nuevo["endpoint"] == "intercambios_baleares"].drop(
-                columns=["endpoint", "sub_category"]),
+            "intercambios_baleares": df_nuevo[df_nuevo["endpoint"] == "intercambios_baleares"].drop(columns=["endpoint", "sub_category"]),
         }
 
         for tabla, df in tablas_dfs.items():
             if not df.empty:
-                insertar_en_supabase(tabla, df)
-
-
-# Programador para actualizar datos desde la API cada 24 horas
-def iniciar_programador_api():
-    global scheduler_initialized
-    if scheduler_initialized:
-        print("✅ Scheduler ya iniciado, no se volverá a iniciar.")
-        return
-
-    print("🔁 Iniciando scheduler...")
-    schedule.every(24).hours.do(actualizar_datos_desde_api)
-    scheduler_initialized = True
-
-    while True:
-        schedule.run_pending()
-        tiempo.sleep(60)
-
-
-# threading.Thread(target=iniciar_programador_api, daemon=True).start()
+                # Filtramos duplicados antes de insertar
+                df = filtrar_registros_nuevos(tabla, df)
+                if not df.empty:
+                    insertar_en_supabase(tabla, df)
+                else:
+                    print(f"No hay nuevos datos para insertar en la tabla {tabla}.")
 
 # ------------------------------ CONSULTA SUPABASE ------------------------------
 
@@ -312,6 +321,38 @@ def get_data_from_supabase(table_name, start_date, end_date, page_size=1000):
 def main():
     st.title("Análisis y Predicción de la Red Eléctrica Española (REE)")
 
+    # Caché de modelos
+    @st.cache_resource
+    def cargar_modelo_onnx(ruta):
+        return ort.InferenceSession(ruta)
+
+    @st.cache_resource
+    def cargar_scaler(ruta):
+        with open(ruta, 'rb') as f:
+            return pickle.load(f)
+
+    @st.cache_data
+    def cargar_historial(ruta):
+        with open(ruta, 'rb') as f:
+            return pickle.load(f)
+
+    @st.cache_data
+    def cargar_datos_prediccion():
+        df = pd.read_csv('datos_prediccion.csv')  # optimizar: cargar solo últimas semanas
+        df['datetime'] = pd.to_datetime(df['datetime'])
+        df = df.set_index('datetime')
+        return df
+
+    @st.cache_data
+    def cargar_datos_prophet():
+        df = pd.read_csv('datos_prediccion_prophet.csv')
+        df['ds'] = pd.to_datetime(df['ds'])
+        return df
+
+    @st.cache_resource
+    def cargar_modelo_prophet(granularidad):
+        return joblib.load(f'models/prophet_model_{granularidad}.joblib')
+
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Descripción","Visualización","Comparador","Predicciones: RNN","Predicciones: Prophet","Extras","Quiénes somos"])
 
     with st.sidebar:
@@ -332,13 +373,13 @@ def main():
             st.session_state["selected_year_for_viz"] = None
         elif modo == "Año específico":
             current_year = datetime.now().year
-            año = st.selectbox("Selecciona el año:", [current_year - i for i in range(3)], index=0,
+            año = st.selectbox("Selecciona el año:", [current_year - i for i in range(11)], index=0,
                                key="query_year_select")
             st.session_state["selected_year_for_viz"] = año
             start_date_query = datetime(año, 1, 1, tzinfo=timezone.utc)
             end_date_query = datetime(año, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
         elif modo == "Histórico":
-            start_date_query = datetime(2022, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+            start_date_query = datetime(2015, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
             end_date_query = datetime.now(timezone.utc)
             st.session_state["selected_year_for_viz"] = None
 
@@ -399,11 +440,13 @@ def main():
             modo_actual = st.session_state.get("modo_seleccionado", "Últimos días")  # Obtener el modo
 
             if tabla == "demanda":
-                fig = px.area(df, x="datetime", y="value", title="Demanda Eléctrica", labels={"value": "MW"})
-                st.plotly_chart(fig, use_container_width=True)
-
-                # --- Nuevo gráfico: Histograma de demanda con outliers para año específico ---
+                if modo_actual == "Últimos días":
+                    fig = px.area(df, x="datetime", y="value", title="Demanda Eléctrica", labels={"value": "MW"})
+                    st.plotly_chart(fig, use_container_width=True)
+                # Histograma de demanda con outliers para año específico
                 if modo_actual == "Año específico":
+                    fig = px.area(df, x="datetime", y="value", title="Demanda Eléctrica", labels={"value": "MW"})
+                    st.plotly_chart(fig, use_container_width=True)
                     año_seleccionado = st.session_state.get("selected_year_for_viz")
                     if año_seleccionado is None:
                         st.warning(
@@ -411,25 +454,20 @@ def main():
                     else:
                         st.subheader(f"Distribución de Demanda y Valores Atípicos para el año {año_seleccionado}")
 
-                        # Filtra el DataFrame para el año seleccionado (df ya debe estar filtrado por el año, pero esto es por seguridad)
                         df_año = df[df['year'] == año_seleccionado].copy()
 
                         if not df_año.empty:
-                            # Calcular Q1, Q3 y el IQR para la columna 'value' (demanda)
+                            # Calculamos los límites de Tukey e identificamos outliers
                             Q1 = df_año['value'].quantile(0.25)
                             Q3 = df_año['value'].quantile(0.75)
                             IQR = Q3 - Q1
-
-                            # Calcular los límites de Tukey's Fence
                             lower_bound = Q1 - 1.5 * IQR
                             upper_bound = Q3 + 1.5 * IQR
-
-                            # Identificar valores atípicos
                             df_año['is_outlier'] = 'Normal'
                             df_año.loc[df_año['value'] < lower_bound, 'is_outlier'] = 'Atípico (bajo)'
                             df_año.loc[df_año['value'] > upper_bound, 'is_outlier'] = 'Atípico (alto)'
 
-                            # Crear el histograma
+                            # Creamos el histograma
                             fig_hist_outliers = px.histogram(
                                 df_año,
                                 x="value",
@@ -441,10 +479,10 @@ def main():
                                                     'Atípico (alto)': 'red'},
                                 nbins=50  # Ajusta el número de bins según la granularidad deseada
                             )
-                            fig_hist_outliers.update_layout(bargap=0.1)  # Espacio entre barras
+                            fig_hist_outliers.update_layout(bargap=0.1)
                             st.plotly_chart(fig_hist_outliers, use_container_width=True)
 
-                            # Mostrar información sobre outliers
+                            # Mostramos información sobre outliers
                             num_outliers_low = (df_año['is_outlier'] == 'Atípico (bajo)').sum()
                             num_outliers_high = (df_año['is_outlier'] == 'Atípico (alto)').sum()
 
@@ -458,6 +496,18 @@ def main():
                         else:
                             st.warning(
                                 f"No hay datos de demanda para el año {año_seleccionado} para generar el histograma.")
+                if modo_actual == "Histórico":
+                    df_annual_summary = df.groupby('year')['value'].sum().reset_index()
+                    df_annual_summary.rename(columns={'value': 'total_demand_MW'}, inplace=True)
+                    fig_hist_bar = px.bar(
+                        df_annual_summary,
+                        x='year',
+                        y='total_demand_MW',
+                        title='Demanda Total Anual',
+                        labels={'total_demand_MW': 'Demanda Total Anual (MW)', 'year': 'Año'},
+                    )
+
+                    st.plotly_chart(fig_hist_bar, use_container_width=True)
 
             elif tabla == "balance":
 
@@ -488,7 +538,7 @@ def main():
                 )
 
             elif tabla == "generacion":
-                df['date'] = df['datetime'].dt.date  # Para reducir a nivel diario (si no lo tienes)
+                df['date'] = df['datetime'].dt.date
 
                 df_grouped = df.groupby(['date', 'primary_category'])['value'].sum().reset_index()
 
@@ -521,7 +571,6 @@ def main():
                     "y analizar cómo varían los flujos en situaciones especiales como picos de demanda o apagones."
                 )
 
-                # Agrupar y renombrar columnas
                 df_map = df.groupby("primary_category")["value"].sum().reset_index()
                 df_map.columns = ["pais_original", "Total"]
 
@@ -535,32 +584,31 @@ def main():
                 df_map["Country"] = df_map["pais_original"].map(nombre_map)
                 df_map = df_map.dropna(subset=["Country"])
 
-                # Crear diccionario país → saldo
+                # Creamos un diccionario país: saldo total
                 country_data = df_map.set_index("Country")["Total"].to_dict()
 
-                # Cargar GeoJSON
+                # Cargamos el GeoJSON
                 with open("world_countries_with_andorra.json", "r", encoding="utf-8") as f:
                     world_geo = json.load(f)
 
-                # Crear mapa base
                 world_map = folium.Map(location=[40, 0], zoom_start=5)
 
-                # Establecer rango fijo para que el color blanco siempre sea cero
-                vmin = -8000000  # Ajusta según el rango máximo esperado de exportación
-                vmax = 8000000  # Ajusta según el rango máximo esperado de importación
+                # Establecemos rango fijo para que el color blanco siempre sea cero
+                vmin = -8000000
+                vmax = 8000000
 
                 colormap = cm.LinearColormap(
                     colors=["blue", "white", "red"],
                     vmin=vmin, vmax=vmax
                 )
 
-                # Insertar saldo como propiedad en el GeoJSON
+                # Insertamos saldo como propiedad en el GeoJSON
                 for feature in world_geo["features"]:
                     country_name = feature["properties"]["name"]
                     saldo = country_data.get(country_name)
                     feature["properties"]["saldo"] = saldo if saldo is not None else "No disponible"
 
-                # Añadir capa GeoJson con estilos y tooltips
+                # Añadimos capa GeoJson interactiva
                 folium.GeoJson(
                     world_geo,
                     style_function=lambda feature: {
@@ -581,7 +629,7 @@ def main():
                     highlight_function=lambda x: {'weight': 3, 'color': 'blue'}
                 ).add_to(world_map)
 
-                # Crear leyenda personalizada como MacroElement
+                # Generamos una leyenda manual
                 legend_html = f"""
                     {{% macro html(this, kwargs) %}}
 
@@ -636,7 +684,7 @@ def main():
                 # Filtramos las dos categorías
                 df_ib = df[df['primary_category'].isin(['Entradas', 'Salidas'])].copy()
 
-                # Agregamos por fecha para evitar múltiples por hora si fuera el caso
+                # Agregamos por fecha para evitar duplicados por si acaso
                 df_ib_grouped = df_ib.groupby(['datetime', 'primary_category'])['value'].sum().reset_index()
 
                 df_ib_grouped['value'] = df_ib_grouped['value'].abs()
@@ -675,8 +723,6 @@ def main():
                 "Para realizar la comparación, primero consulta datos de la tabla 'Demanda' en modo 'Histórico' en la barra lateral de consulta de datos.")
         elif "ree_data" in st.session_state and not st.session_state["ree_data"].empty:
             df = st.session_state["ree_data"]
-
-            # Asegurarse de que el dataframe tiene la columna 'year'
             if 'year' not in df.columns:
                 df['year'] = pd.to_datetime(df['datetime']).dt.year
 
@@ -694,18 +740,16 @@ def main():
 
             years_for_comparison = sorted([year1, year2])
 
-            # Filtrar datos de los años seleccionados
+            # Filtramos datos de los años seleccionados y creamos 'sort_key' para alinear por día del año
             df_comparison_demanda = df.copy()
             df_filtered_comparison = df_comparison_demanda[
                 df_comparison_demanda['year'].isin(years_for_comparison)].copy()
-
-            # Crear 'sort_key' para alinear por día del año
             df_filtered_comparison['sort_key'] = df_filtered_comparison['datetime'].apply(
                 lambda dt: dt.replace(year=2000)
             )
             df_filtered_comparison = df_filtered_comparison.sort_values('sort_key')
 
-            # --- Gráfico de Demanda Horaria General Comparativa ---
+            # Gráfico de demanda comprativa
             fig_comp_hourly = px.line(
                 df_filtered_comparison,
                 x="sort_key",
@@ -718,7 +762,7 @@ def main():
             fig_comp_hourly.update_xaxes(tickformat="%b %d")
             st.plotly_chart(fig_comp_hourly, use_container_width=True)
 
-            # --- Gráficos de Comparación de Métricas Diarias ---
+            # Gráficos de comparación de métricas
             metrics_comp = df_filtered_comparison.groupby(
                 ['year', df_filtered_comparison['datetime'].dt.strftime('%m-%d')])['value'].agg(
                 ['mean', 'median', 'min', 'max']).reset_index()
@@ -746,9 +790,7 @@ def main():
                 fig.update_xaxes(tickformat="%b %d")
                 st.plotly_chart(fig, use_container_width=True)
 
-            # -----------------------------------
-            # Sección de Identificación de Outliers
-            # -----------------------------------
+            # Identificación de outliers
             st.subheader("Identificación de Años Outliers (Demanda Anual Total)")
 
             df_annual_summary = df.groupby('year')['value'].sum().reset_index()
@@ -803,203 +845,136 @@ def main():
                 "No hay datos disponibles para la comparación. Realiza primero una consulta en la pestaña de datos.")
 
     with tab4:
-        # -------------------------------------------
-        # CONFIGURACIÓN DE STREAMLIT
-        # -------------------------------------------
         st.subheader("Predicción de series temporales con modelos de Redes Neuronales Recurrentes")
-
-        # -------------------------------------------
-        # SELECCIÓN DE MODELO Y PÉRDIDA
-        # -------------------------------------------
-        model_type = st.selectbox("Selecciona el modelo", ["SimpleRNN", "LSTM", "GRU"])
+        model_type = st.selectbox("Modelo RNN", ["SimpleRNN", "LSTM", "GRU"])
         loss_function = st.selectbox("Función de pérdida", ["mse", "mae"])
+        n_pred = st.slider("Pasos a predecir (Multi-Step)", 1, 100, 24, step=1)
+        calcular_rnn = st.button("Calcular predicción RNN")
 
-        model_filename = f'models/{model_type}_model_{loss_function}.onnx'
-        scaler_filename = f'models/scaler_{model_type}_{loss_function}.pkl'
-        history_filename = f'models/{model_type}_history_{loss_function}.pkl'
+        model_name = f"{model_type}_model_{loss_function}"
+        model_path = f"models/{model_name}.onnx"
+        scaler_path = f"models/scaler_{model_type}_{loss_function}.pkl"
+        history_path = f"models/{model_type}_history_{loss_function}.pkl"
 
         try:
-            # Cargar modelo ONNX
-            session  = ort.InferenceSession(model_filename)
+            session = cargar_modelo_onnx(model_path)
+            scaler = cargar_scaler(scaler_path)
+            history = cargar_historial(history_path)
+            df_rnn = cargar_datos_prediccion()
+            st.success("Recursos RNN cargados.")
+        except Exception as e:
+            st.error(f"Error al cargar recursos RNN: {e}")
+            st.stop()
 
-            # Cargar scaler
-            with open(scaler_filename, 'rb') as f:
-                scaler = pickle.load(f)
+        st.subheader("Evolución de la pérdida (RNN)")
+        df_loss = pd.DataFrame({
+            'Época': range(1, len(history['loss']) + 1),
+            'Entrenamiento': history['loss'],
+            'Validación': history['val_loss']
+        })
+        fig_loss = px.line(df_loss, x='Época', y=['Entrenamiento', 'Validación'])
+        st.plotly_chart(fig_loss, use_container_width=True)
 
-            # Cargar history
-            with open(history_filename, 'rb') as f:
-                history = pickle.load(f)
+        n_pasos = 24
+        serie = scaler.transform(df_rnn[['value']])
 
-            st.success(f"Modelo {model_filename} cargado correctamente.")
+        X, y = [], []
+        for i in range(len(serie) - n_pasos):
+            X.append(serie[i:i + n_pasos])
+            y.append(serie[i + n_pasos])
+        X = np.array(X).reshape(-1, n_pasos, 1).astype('float32')
+        y = np.array(y)
 
-            # -------------------------------------------
-            # GRÁFICO DE FUNCIÓN DE PÉRDIDA
-            # -------------------------------------------
-            st.subheader("Gráfico de la función de pérdida")
-            df_loss = pd.DataFrame({
-                'epoch': range(1, len(history['loss']) + 1),
-                'train_loss': history['loss'],
-                'val_loss': history['val_loss']
-            })
-            fig_loss = px.line(df_loss, x='epoch', y=['train_loss', 'val_loss'],
-                               labels={'value': 'Loss', 'epoch': 'Época'},
-                               title='Evolución de la pérdida durante el entrenamiento')
-            st.plotly_chart(fig_loss, use_container_width=True)
-
-            # -------------------------------------------
-            # CARGA DE LOS DATOS
-            # -------------------------------------------
-            df_prediccion = pd.read_csv('datos_prediccion.csv')
-            df_prediccion['datetime'] = pd.to_datetime(df_prediccion['datetime'])
-            df_prediccion = df_prediccion.set_index('datetime')
-
-            df_prediccion['value_scaled'] = scaler.transform(df_prediccion[['value']])
-
-            # Preparación de datos
-            n_pasos = 24
-
-            def crear_secuencias(datos, n_pasos):
-                X, y = [], []
-                for i in range(len(datos) - n_pasos):
-                    X.append(datos[i:i + n_pasos])
-                    y.append(datos[i + n_pasos])
-                return np.array(X), np.array(y)
-
-            X, y = crear_secuencias(df_prediccion['value_scaled'].values, n_pasos)
-            X = X.reshape((X.shape[0], X.shape[1], 1)).astype('float32')
-
-            # Preparar la sesión ONNX
-            input_name = session.get_inputs()[0].name
-
-            # -------------------------------------------
-            # ONE-STEP PREDICTION
-            # -------------------------------------------
-            st.subheader("One-Step Prediction")
-
-            y_pred_scaled = []
-            for i in range(X.shape[0]):
-                pred = session.run(None, {input_name: X[i:i + 1]})[0]
-                y_pred_scaled.append(pred[0][0])
-
-            y_pred_scaled = np.array(y_pred_scaled).reshape(-1, 1)
-            y_pred = scaler.inverse_transform(y_pred_scaled)
+        input_name = session.get_inputs()[0].name
+        
+        # Las predicciones sólo se generan si le damos al botón
+        if calcular_rnn:
+            st.subheader("Predicción One-Step (RNN)")
+            y_pred_scaled = [session.run(None, {input_name: X[i:i + 1]})[0][0][0] for i in range(X.shape[0])]
+            y_pred = scaler.inverse_transform(np.array(y_pred_scaled).reshape(-1, 1))
             y_real = scaler.inverse_transform(y.reshape(-1, 1))
 
             df_pred = pd.DataFrame({
                 'Real': y_real.flatten(),
                 'Predicción': y_pred.flatten()
-            }, index=df_prediccion.index[n_pasos:])
+            }, index=df_rnn.index[n_pasos:])
 
-            fig_pred = px.line(df_pred.head(200), title="Predicción vs Real (One-Step)")
-            st.plotly_chart(fig_pred, use_container_width=True)
+            with st.expander("Ver gráfico One-Step"):
+                fig_pred = px.line(df_pred.tail(100), title="Predicción vs Real (últimos 100 puntos)")
+                st.plotly_chart(fig_pred, use_container_width=True)
 
-            mse = mean_squared_error(y_real, y_pred)
-            st.metric(label="MSE (Error cuadrático medio)", value=f"{mse:.2f}")
+            st.metric("MSE (One-Step)", f"{mean_squared_error(y_real, y_pred):.2f}")
 
-            # -------------------------------------------
-            # MULTI-STEP PREDICTION
-            # -------------------------------------------
-            st.subheader("Multi-Step Prediction")
-
-            # Elegir número de pasos a predecir
-            n_pred = st.slider("Número de pasos a predecir (Multi-Step)", min_value=1, max_value=168, value=24, step=1)
-
-            ultimos_valores = df_prediccion['value_scaled'].values[-n_pasos:].tolist()
-            predicciones_multi = []
+            st.subheader("Predicción Multi-Step (RNN)")
+            ultimos_valores = serie[-n_pasos:].flatten().tolist()
+            preds_multi = []
 
             for _ in range(n_pred):
-                entrada = np.array(ultimos_valores[-n_pasos:]).reshape((1, n_pasos, 1)).astype('float32')
-                pred_scaled = session.run(None, {input_name: entrada})[0][0][0]
-                predicciones_multi.append(pred_scaled)
-                ultimos_valores.append(pred_scaled)
+                entrada = np.array(ultimos_valores[-n_pasos:]).reshape(1, n_pasos, 1).astype('float32')
+                pred = session.run(None, {input_name: entrada})[0][0][0]
+                preds_multi.append(pred)
+                ultimos_valores.append(pred)
 
-            predicciones_multi = scaler.inverse_transform(np.array(predicciones_multi).reshape(-1, 1)).flatten()
+            preds_multi = scaler.inverse_transform(np.array(preds_multi).reshape(-1, 1)).flatten()
+            fechas_futuras = pd.date_range(start=df_rnn.index[-1] + timedelta(hours=1), periods=n_pred, freq='H')
 
-            fechas_futuras = pd.date_range(start=df_prediccion.index[-1] + pd.Timedelta(hours=1), periods=n_pred,
-                                           freq='H')
-
-            fig_multi = go.Figure()
-            fig_multi.add_trace(
-                go.Scatter(x=df_prediccion.index, y=df_prediccion['value'], mode='lines', name='Datos reales'))
-            fig_multi.add_trace(
-                go.Scatter(x=fechas_futuras, y=predicciones_multi, mode='lines+markers', name='Predicción Multi-Step'))
-
-            fig_multi.update_layout(title="Predicción Multi-Step", xaxis_title="Fecha", yaxis_title="Valor")
-            st.plotly_chart(fig_multi, use_container_width=True)
-
-        except Exception as e:
-            st.warning(f"❌ El modelo {model_type} con pérdida {loss_function} no se encuentra o ocurrió un error.\n{e}")
+            with st.expander("Ver gráfico Multi-Step"):
+                fig_multi = go.Figure()
+                fig_multi.add_trace(go.Scatter(x=df_rnn.index[-72:], y=df_rnn['value'].tail(72), name="Real"))
+                fig_multi.add_trace(go.Scatter(x=fechas_futuras, y=preds_multi, name="Predicción"))
+                fig_multi.update_layout(title="Predicción futura de demanda", xaxis_title="Fecha", yaxis_title="MW")
+                st.plotly_chart(fig_multi, use_container_width=True)
 
     with tab5:
         st.subheader("Predicciones de series temporales con Facebook Prophet")
 
-        # Configuración de granularidades
         granularidades = {
             'Diaria': 'diaria',
             'Semanal': 'semanal',
-            'Mensual': 'mensual',
-            'Trimestral': 'trimestral',
-            'Semestral': 'semestral',
-            'Anual': 'anual'
+            'Mensual': 'mensual'
         }
 
-        # Configuración de pasos precalculados
-        horizontes = [10, 50, 100]
-
-        # Selección de granularidad y horizonte
-        granularidad_seleccionada = st.selectbox("Selecciona la granularidad:", list(granularidades.keys()))
+        granularidad_seleccionada = st.selectbox("Selecciona la granularidad Prophet:", list(granularidades.keys()))
         nombre_granularidad = granularidades[granularidad_seleccionada]
+        calcular_prophet = st.button("Calcular predicción Prophet")
+        
+        # La predicción sólo se genera si le damos al botón
+        if calcular_prophet:
+            try:
+                model_prophet = cargar_modelo_prophet(nombre_granularidad)
+                df_prophet = cargar_datos_prophet()
+                st.success(f"Modelo Prophet '{granularidad_seleccionada}' cargado correctamente.")
+            except Exception as e:
+                st.error(f"Error cargando Prophet {nombre_granularidad}: {e}")
+                st.stop()
 
-        n_pred = st.selectbox("Selecciona el número de pasos a predecir:", horizontes)
+            freq_map = {
+                'diaria': 'D',
+                'semanal': 'W',
+                'mensual': 'M',
+                'trimestral': 'Q',
+                'semestral': '2Q',
+                'anual': 'A'
+            }
+            freq = freq_map[nombre_granularidad]
+            n_pred = st.slider("Pasos a predecir (Prophet)", min_value=10, max_value=100, value=10)
 
-        # Cachear la carga de modelos
-        @st.cache_resource
-        def load_model(granularidad):
-            return joblib.load(f'models/prophet_model_{granularidad}.joblib')
+            future = model_prophet.make_future_dataframe(periods=n_pred, freq=freq)
+            forecast = model_prophet.predict(future)
 
-        # Cachear la carga de predicciones
-        @st.cache_data
-        def load_forecast(granularidad, pasos):
-            df = pd.read_csv(f'forecasts/forecast_{granularidad}_{pasos}.csv')
-            df['ds'] = pd.to_datetime(df['ds'])
-            return df
+            with st.expander("Ver predicción Prophet"):
+                fig1 = plot_plotly(model_prophet, forecast)
+                st.plotly_chart(fig1, use_container_width=True)
 
-        # Cargar modelo
-        try:
-            model_prophet = load_model(nombre_granularidad)
-            st.success(f"Modelo {granularidad_seleccionada} cargado correctamente.")
-        except Exception as e:
-            st.error(f"No se pudo cargar el modelo para {granularidad_seleccionada}: {e}")
-            st.stop()
-
-        # Cargar predicción precalculada
-        try:
-            forecast = load_forecast(nombre_granularidad, n_pred)
-            st.success("Predicción cargada correctamente.")
-        except Exception as e:
-            st.error(f"No se pudo cargar la predicción: {e}")
-            st.stop()
-
-        # Mostrar gráfica de predicción
-        st.subheader("Predicción")
-        fig1 = plot_plotly(model_prophet, forecast)
-
-        # 🔥 Limitar la vista a los últimos 6 meses
-        min_date = forecast['ds'].max() - pd.DateOffset(months=6)
-        fig1.update_layout(xaxis_range=[min_date, forecast['ds'].max()])
-
-        st.plotly_chart(fig1, use_container_width=True)
-
-        # Mostrar componentes
-        st.subheader("Componentes de la predicción")
-        fig2 = plot_components_plotly(model_prophet, forecast)
-        st.plotly_chart(fig2, use_container_width=True)
+            with st.expander("Ver componentes Prophet"):
+                fig2 = plot_components_plotly(model_prophet, forecast)
+                st.plotly_chart(fig2, use_container_width=True)
 
     with tab6:
         st.subheader("Gráficos extras de interés")
         if tabla == "demanda":
 
-            # --- HEATMAP ---
+            # Heatmap extra
             df_heatmap = df.copy()
             df_heatmap['weekday'] = df_heatmap['datetime'].dt.day_name()
             df_heatmap['hour'] = df_heatmap['datetime'].dt.hour
@@ -1032,7 +1007,7 @@ def main():
 
             st.plotly_chart(fig1, use_container_width=True)
 
-            # --- BOXPLOT ---
+            # Boxplot extra
             df_box = df.copy()
 
             df_box["month"] = df_box["datetime"].dt.month
@@ -1068,25 +1043,25 @@ def main():
                 "rol": "Desarrollador | Científico de Datos | Facilitador",
                 "github": "https://github.com/AdrianAcedo",
                 "linkedin": "https://www.linkedin.com/in/adrianacedoquintanar/",
-                "imagen_url": "https://media.licdn.com/dms/image/v2/D4D35AQHvRPQt2he-Ag/profile-framedphoto-shrink_800_800/B4DZXuCJEKHAAg-/0/1743455293952?e=1751054400&v=beta&t=Nsi_PWhEFrUWA7Yvgr4j1nfParqEyEhG9nHAXYff0qk"  # Sustituir por la URL real
+                "imagen_url": "https://media.licdn.com/dms/image/v2/D4D35AQHvRPQt2he-Ag/profile-framedphoto-shrink_800_800/B4DZXuCJEKHAAg-/0/1743455293952?e=1751054400&v=beta&t=Nsi_PWhEFrUWA7Yvgr4j1nfParqEyEhG9nHAXYff0qk"
             },
             {
                 "nombre": "Lucía Varela",
                 "rol": "Desarrolladora | Científica de Datos",
                 "github": "https://github.com/luvare",
                 "linkedin": "https://www.linkedin.com/in/lucia-varela-4789bb16a/",
-                "imagen_url": "https://media.licdn.com/dms/image/v2/D4D35AQHAznsP79iWlA/profile-framedphoto-shrink_400_400/B4DZX32D4.HsAg-/0/1743619899433?e=1751302800&v=beta&t=fslO0FqGH_rwnuydPP2RaBeidXL0chbKHTB52w9Qnz4"  # Sustituir por la URL real
+                "imagen_url": "https://media.licdn.com/dms/image/v2/D4D35AQHAznsP79iWlA/profile-framedphoto-shrink_400_400/B4DZX32D4.HsAg-/0/1743619899433?e=1751464800&v=beta&t=zkGBeJUHDft4f_ZpgDKd64YQB5JOA-zaV-LEW7l4DAU"
             },
             {
                 "nombre": "Génesis Rodríguez",
                 "rol": "Desarrolladora | Científica de Datos",
                 "github": "https://github.com/GenesisSolangel",
-                "linkedin": "https://www.linkedin.com/in/g%C3%A9nesis-rodr%C3%ADguez-31a5a6218/",
-                "imagen_url": "https://media.licdn.com/dms/image/v2/D4D03AQGTzePA7mYCCg/profile-displayphoto-shrink_400_400/profile-displayphoto-shrink_400_400/0/1710544796281?e=1755734400&v=beta&t=EYzHk_ajDGLe20r2PNyVE_ig9R3DcM4xFUhs_P0E1Ps"  # Sustituir por la URL real
+                "linkedin": "https://www.linkedin.com/in/genesis-rodriguez-rivas-036715371/",
+                "imagen_url": "https://media.licdn.com/dms/image/v2/D4D03AQGUTFrj5Jl_gQ/profile-displayphoto-scale_400_400/B4DZekmVsDGkAg-/0/1750813204161?e=1756339200&v=beta&t=zK-kmcgY0M-zx2wfNE8ThhV33t8E33jQwzBycSks2ig"
             }
         ]
 
-        # Mostrar cada miembro en fila
+        # Mostramos a cada miembro con su imagen
         for persona in equipo:
             st.markdown(
                 f"""
