@@ -1043,7 +1043,7 @@ def main():
                 "rol": "Desarrollador | Científico de Datos | Facilitador",
                 "github": "https://github.com/AdrianAcedo",
                 "linkedin": "https://www.linkedin.com/in/adrianacedoquintanar/",
-                "imagen_url": "https://media.licdn.com/dms/image/v2/D4D35AQHvRPQt2he-Ag/profile-framedphoto-shrink_800_800/B4DZXuCJEKHAAg-/0/1743455293952?e=1751054400&v=beta&t=Nsi_PWhEFrUWA7Yvgr4j1nfParqEyEhG9nHAXYff0qk"
+                "imagen_url": "https://media.licdn.com/dms/image/v2/D4D35AQHvRPQt2he-Ag/profile-framedphoto-shrink_800_800/B4DZXuCJEKHAAg-/0/1743455293952?e=1751900400&v=beta&t=okS9nLRXZo4B9jZsUFzySJMS_UDowZcBlxOIBx9c3TM"
             },
             {
                 "nombre": "Lucía Varela",
